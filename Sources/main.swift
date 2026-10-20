@@ -187,6 +187,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
     let defaults = UserDefaults.standard
     var roam: Bool { defaults.object(forKey: "roam") as? Bool ?? true }
     var appAware: Bool { defaults.object(forKey: "appAware") as? Bool ?? true }
+    var emoji: Bool { defaults.bool(forKey: "emoji") }   // off: pixel icons in the bubble, SF Symbols in the menus
     lazy var dataDir: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Mochi", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -229,7 +230,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
             saved = s
         }
         var env: [String: Any] = ["app": true, "boot": bootTime() * 1000, "launched": Date().timeIntervalSince1970 * 1000,
-                                  "scale": scale, "w": size.width, "h": size.height, "below": App.below]
+                                  "scale": scale, "w": size.width, "h": size.height, "below": App.below, "emoji": emoji]
         if let speed = ProcessInfo.processInfo.environment["MOCHI_SPEED"], let v = Double(speed) { env["speed"] = v }
         let boot = "window.MOCHI_SAVED = \(saved); window.MOCHI_ENV = \(json(env));"
         ucc.addUserScript(WKUserScript(source: boot, injectionTime: .atDocumentStart, forMainFrameOnly: true))
@@ -784,6 +785,9 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
         let a = item("React to Apps & Calls", #selector(toggleAppAware))
         a.state = appAware ? .on : .off
         menu.addItem(a)
+        let e = item("Use Emoji", #selector(toggleEmoji))
+        e.state = emoji ? .on : .off
+        menu.addItem(e)
         let q = item("Quiet for an Hour", #selector(toggleQuiet))
         q.state = quiet ? .on : .off
         menu.addItem(q)
@@ -796,24 +800,27 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
     }
 
     func addPetItems(to menu: NSMenu) {
-        let actions: [(String, String)] = [
-            ("Cheer Me On", "cheer"),
-            ("How Am I Doing Today?", "stats"),
-            ("I Drank Water 💧", "water"),
-            ("I Got Coffee ☕", "coffee"),
-            ("I Got an Energy Drink ⚡", "energy"),
-            ("I'm Taking a Walk 🚶", "walk"),
-            ("Play Ball", "ball"),
-            ("Water the Plant", "plant"),
-            ("Sit on My Window", "perch"),
-            ("Go Explore", "explore"),
+        // title, its emoji (shown when emoji are on), its SF Symbol (shown when they're off), action
+        let actions: [(String, String, String, String)] = [
+            ("Cheer Me On", "", "hands.clap", "cheer"),
+            ("How Am I Doing Today?", "", "chart.bar", "stats"),
+            ("I Drank Water", "💧", "drop", "water"),
+            ("I Got Coffee", "☕", "cup.and.saucer", "coffee"),
+            ("I Got an Energy Drink", "⚡", "bolt", "energy"),
+            ("I'm Taking a Walk", "🚶", "figure.walk", "walk"),
+            ("Play Ball", "", "soccerball", "ball"),
+            ("Water the Plant", "", "leaf", "plant"),
+            ("Sit on My Window", "", "macwindow", "perch"),
+            ("Go Explore", "", "map", "explore"),
         ]
-        for (title, id) in actions {
-            let it = item(title, #selector(petAction(_:)))
+        for (title, mark, symbol, id) in actions {
+            let it = item(emoji && !mark.isEmpty ? "\(title) \(mark)" : title, #selector(petAction(_:)))
+            if !emoji { it.image = Self.symbol(symbol) }
             it.representedObject = id
             menu.addItem(it)
         }
         let dress = NSMenuItem(title: "Dress Up", action: nil, keyEquivalent: "")
+        if !emoji { dress.image = Self.symbol("tshirt") }
         let sub = NSMenu()
         for (title, id) in [("Wizard", "wizard"), ("Detective", "detective"), ("Chef", "chef"), ("Headphones", "focus"), ("Sunglasses", "shades"), ("TV Head", "tv"), ("Party", "party")] {
             let it = item(title, #selector(petAction(_:)))
@@ -870,6 +877,11 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
         else { panel.orderFrontRegardless(); defaults.set(false, forKey: "hidden") }
     }
 
+    @objc func toggleEmoji() {
+        defaults.set(!emoji, forKey: "emoji")
+        js("mochi.setEmoji(\(emoji))")
+    }
+
     @objc func toggleQuiet() {
         let until = quiet ? 0 : (Date().timeIntervalSince1970 + 3600) * 1000
         quiet.toggle()
@@ -897,6 +909,8 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
         send("still")
         if !panel.isVisible { toggleVisible() }
     }
+
+    static func symbol(_ name: String) -> NSImage? { NSImage(systemSymbolName: name, accessibilityDescription: nil) }
 
     /// The critter's silhouette as a template image for the menu bar.
     static func menuIcon() -> NSImage {

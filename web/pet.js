@@ -739,6 +739,7 @@
   }
 
   Critter.POSES = Object.keys(POSES);
+  Critter.PAL = PAL;
   Critter.SIZE = [CW, CH];
   root.Critter = Critter;
   root.MochiView = Critter;

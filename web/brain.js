@@ -111,14 +111,18 @@
   const isEarly = (t) => { const u = usualStart(); return u != null && mod(t) < u - 45; };
 
   // ---------- speech bubble ----------
+  // emoji are off unless you turn them on: pixel icons stand in for them (icons.js)
+  let emoji = ENV.emoji === true || params.get('emoji') === '1';
   const bubble = {
     show(text, buttons, onChoose) {
-      bubbleEl.querySelector('.b-text').textContent = text;
+      R.bubbleText = text;
+      R.bubbleButtons = buttons;
+      MochiIcons.render(bubbleEl.querySelector('.b-text'), text, emoji);
       const box = bubbleEl.querySelector('.b-btns');
       box.innerHTML = '';
       (buttons || []).forEach(([label, id], i) => {
         const b = document.createElement('button');
-        b.textContent = label;
+        MochiIcons.render(b, label, emoji);
         if (i === 0) b.className = 'primary';
         b.addEventListener('click', (e) => { e.stopPropagation(); onChoose(id); });
         box.appendChild(b);
@@ -668,6 +672,14 @@
       setTimeout(restorePose, 3600);
     },
     sys: onSys,
+    setEmoji(on) {
+      emoji = !!on;
+      if (!bubbleEl.hidden && R.bubbleText != null) {   // redraw what's showing
+        MochiIcons.render(bubbleEl.querySelector('.b-text'), R.bubbleText, emoji);
+        bubbleEl.querySelectorAll('.b-btns button').forEach((b, i) => MochiIcons.render(b, R.bubbleButtons[i][0], emoji));
+        placeBubble();
+      }
+    },
     setScale(s, w, h) { layout.w = w; layout.h = h; view.setScale(s); applyLayout(); placeBubble(); },
     action(name) {
       R.now = Date.now();
