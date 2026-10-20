@@ -43,6 +43,7 @@ final class ClaudeCode {
                          "PermissionRequest", "Notification", "Stop", "StopFailure", "SubagentStart", "SubagentStop", "PreCompact", "PostCompact"]
 
     var sessions: [String: ClaudeSession] = [:]
+    private var ignored: Set<String> = []   // sessions that are only another app checking usage
     var fiveHour: UsageWindow?
     var weekly: UsageWindow?
     var usageAt: Date?
@@ -166,7 +167,9 @@ final class ClaudeCode {
         let event = e["hook_event_name"] as? String ?? ""
         let id = e["session_id"] as? String ?? "default"
         let now = Date().timeIntervalSince1970
-        if (e["cwd"] as? String) == dataDir.path { return }   // Mochi's own usage check (older hook scripts don't skip it)
+        if (e["cwd"] as? String) == dataDir.path || ignored.contains(id) { return }   // Mochi's own usage check, or another app's
+        if sessions[id] == nil, pid > 0, Self.isUsageCheck(pid) { ignored.insert(id); return trace("claude: ignoring \(id), it's only a usage check") }
+        trace("claude: \(event) \(id) \(e["tool_name"] as? String ?? "")")
         if event == "SessionEnd" { sessions[id] = nil; return changed() }
         var s = sessions[id] ?? ClaudeSession(id: id)
         s.last = now
@@ -270,6 +273,7 @@ final class ClaudeCode {
     }
 
     private func changed() { onChange?() }
+    private func trace(_ msg: String) { if ProcessInfo.processInfo.environment["MOCHI_TRACE"] != nil { rlog(msg) } }
 
     // MARK: checking usage on a timer
     //
@@ -441,6 +445,35 @@ final class ClaudeCode {
         guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size > 0 else { return nil }
         let p = info.kp_eproc.e_ppid
         return p > 1 ? p : nil
+    }
+
+    /// The command line a process was started with.
+    private static func arguments(of pid: pid_t) -> [String] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 4 else { return [] }
+        var buf = [UInt8](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buf, &size, nil, 0) == 0 else { return [] }
+        let argc = Int(buf.withUnsafeBytes { $0.load(as: Int32.self) })
+        // after argc: the executable path, padding, then argc NUL-separated arguments
+        let parts = buf[4..<size].split(separator: 0, omittingEmptySubsequences: true).map { String(decoding: $0, as: UTF8.self) }
+        return Array(parts.dropFirst().prefix(argc))
+    }
+
+    /// Whether a hook came from Claude Code being run just to read a screen, like `claude /usage`, which is how
+    /// Mochi and AI Usage check your limits. Those aren't sessions anyone is working in, so there's nothing to act out.
+    static func isUsageCheck(_ pid: pid_t) -> Bool {
+        let peek: Set<String> = ["/usage", "/stats", "/status", "/cost"]
+        var p: pid_t? = pid
+        for _ in 0..<6 {
+            guard let cur = p else { break }
+            let args = arguments(of: cur)
+            // `claude /usage`, or `node …/claude-code/cli.js /usage` for an npm install
+            if let i = args.firstIndex(where: peek.contains), args[..<i].contains(where: { $0.lowercased().contains("claude") }) { return true }
+            if args.contains(where: { ($0 as NSString).lastPathComponent == "ptydrive" }) { return true }   // AI Usage's helper
+            p = parent(of: cur)
+        }
+        return false
     }
 
     /// The app a process belongs to: walk up its parents until one is an app with a window.
