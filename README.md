@@ -60,9 +60,44 @@ It sticks to the bottom of the screen and to windows with room above them: a win
 | run the battery under 20% | looks drained and tells you; does a happy zap when you plug in |
 | switch to dark / light mode | puts on a nightcap / sunglasses |
 
+### Claude Code
+
+Connect it from the menu (**Claude Code → Connect Claude Code…**, or say yes when Mochi offers) and restart your Claude Code sessions. From then on Mochi acts out what Claude is doing, in a terminal, an editor or the Claude app, and says a word about it:
+
+| Claude is... | Mochi... |
+|---|---|
+| thinking | looks up, thought dots over its head |
+| reading files | reads a book: "reading App.tsx" |
+| editing or writing code | types on its laptop: "editing pet.js" |
+| searching the code / the web | puts on the detective hat / grabs binoculars |
+| running a command | types into a green terminal |
+| running tests, updating its plan | ticks off a checklist |
+| committing or pushing | carries a parcel |
+| running sub-agents | conducts, with two tiny helper Mochis |
+| compacting its memory | squishes |
+| hitting an error | x eyes, a bead of sweat |
+| waiting for your OK, or asking you something | hops over to your pointer with a "!" and asks; **show me** switches to the app that session is in |
+| done | cheers: "done! your turn" |
+
+The idea and the hook events come from [claude-desktop-pet](https://github.com/Harriszed/claude-desktop-pet) (MIT), rebuilt here natively with Mochi's own art.
+
+With several sessions going, the most urgent one wins (anything that needs you first), and the menu lists each one; click one to switch to it. Turn off **Say What Claude Is Doing** to only hear when Claude needs you or is done, or **Act Out What Claude Is Doing** to ignore it altogether.
+
+### The menu bar
+
+**Menu Bar** picks what's up there:
+
+- **Claude Usage** (the default): once Claude Code is connected, a badge with how much of your 5-hour limit you've used, like [AI Usage](https://github.com/eli-manning/Ai-Usage). The menu opens with 5-hour and weekly bars and when each resets. Pro and Max plans only; it fills in after your next Claude Code message.
+- **Mochi Icon**: Mochi's silhouette.
+- **Hidden**: nothing. Right-click Mochi for the whole menu. If you hide Mochi too, open the app again to bring it back.
+
 It also cheers you on every 20–35 minutes, throws confetti on each hour you've worked, and gets heart eyes when you hover over it.
 
+**Emoji** are off by default: Mochi's speech bubble uses little pixel icons instead, and the menus use the system's symbols. Turn on **Use Emoji** if you'd rather have them.
+
 **Privacy:** Mochi reads macOS idle timers (seconds since the last key press or mouse move), the ID of the app in front (like `com.microsoft.VSCode`), where windows are on screen (positions only: no titles or contents), whether the camera, mic or speakers are in use (an on/off flag, never the audio or video), the battery level, and dark mode. It never sees what you type or what's in your windows. No permissions are needed and nothing leaves your Mac. Turn off **React to Apps & Calls** to stop it looking at apps, calls and music. State lives in `~/Library/Application Support/Mochi/state.json`.
+
+**Claude Code:** connecting adds a hook script and a status line script (both in `~/Library/Application Support/Mochi/`) to `~/.claude/settings.json`, after backing it up to `settings.json.mochi-backup`. Your other settings, hooks and key order are kept, and a status line you already had keeps showing: Mochi's passes it through. The hooks run in the background, so they never slow Claude down, and send each event (which tool, its file or command, the project folder) to Mochi over `127.0.0.1:47833`; nothing leaves your Mac. The status line passes along your plan's usage percentages and context use. **Disconnect Claude Code** takes it all back out.
 
 ## Using it
 
@@ -70,7 +105,9 @@ It also cheers you on every 20–35 minutes, throws confetti on each hour you've
 - The menu bar icon shows today's stats, lets you log water/coffee/walks, dress it up, send it to **Sit on My Window** or **Go Explore**, and has:
   - **Size**: Tiny, Small (the default), Medium, Large.
   - **Let Mochi Roam Around**: turn off to keep it exactly where you put it, no gravity.
-  - **React to Apps & Calls**, **Quiet for an Hour**, **Open at Login**.
+  - **Claude Code**: connect or disconnect, and how much Mochi follows along.
+  - **Menu Bar**: Claude Usage, Mochi Icon, or Hidden.
+  - **React to Apps & Calls**, **Use Emoji**, **Quiet for an Hour**, **Open at Login**.
 
 ## Building
 
@@ -82,13 +119,22 @@ It also cheers you on every 20–35 minutes, throws confetti on each hour you've
 
 Needs Xcode's Swift toolchain. `web/preview.html` shows every pose in a browser (they follow your cursor).
 
-To test reminders quickly: `MOCHI_SPEED=60 ~/Applications/Mochi.app/Contents/MacOS/Mochi` makes the reminder timers 60× faster. `MOCHI_ROAM=2` makes it explore as if you'd stepped away (`1` for the occasional stroll) and logs every move to the terminal.
+To test reminders quickly: `MOCHI_SPEED=60 ~/Applications/Mochi.app/Contents/MacOS/Mochi` makes the reminder timers 60× faster. `MOCHI_ROAM=2` makes it explore as if you'd stepped away (`1` for the occasional stroll) and logs every move to the terminal. `MOCHI_TRACE=1` logs every pose and line.
+
+To try the Claude Code poses without Claude, post a hook event yourself:
+
+```sh
+curl -H 'X-Mochi: 1' --data '{"hook_event_name":"PreToolUse","session_id":"t","tool_name":"Edit","tool_input":{"file_path":"App.tsx"}}' http://127.0.0.1:47833/hook
+```
 
 Re-render the PNGs in `renders/`: `Mochi.app/Contents/MacOS/Mochi --render <folder>` (run it from a copy outside `~/Documents`).
 
 ## Files
 
+- `Sources/Claude.swift`: Claude Code: the local listener its hooks talk to, what each session is doing, usage limits, and connecting/disconnecting `~/.claude/settings.json`.
+- `Sources/MenuBar.swift`: the usage badge and the usage bars in the menu.
 - `Sources/main.swift`: the Mac app: transparent always-on-top window, how Mochi gets around (screens and window tops become ledges; walking, hopping, falling, riding), sensors (idle, sleep/wake, app in front, camera/mic, battery), menus, saving.
 - `web/pet.js`: the critter. Every pose and prop is drawn as pixel strings on a 46×34 canvas.
 - `web/brain.js`: decides what Mochi does and says, and how much it may roam right now (it stays put while you type).
+- `web/icons.js`: pixel icons that stand in for emoji in the speech bubble.
 - `web/pet.css`: pixel speech bubble. Font: Jersey 15 (OFL, `web/fonts/OFL.txt`).
