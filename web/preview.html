@@ -1,0 +1,33 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Mochi preview</title>
+<link rel="stylesheet" href="pet.css">
+<style>
+  body { margin: 0; padding: 24px; background: #f1efec; font: 400 18px/1.2 "Jersey 15", ui-monospace, monospace; color: #2a1d1a; }
+  h1 { margin: 0 0 16px; font-size: 24px; font-weight: 600; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  .cell { background: #f7f6f4; border-radius: 16px; padding: 10px 8px 12px; display: grid; justify-items: center; gap: 4px; box-shadow: 0 1px 0 #e2ded8; }
+  .bubble-demo { display: flex; justify-content: center; padding: 30px 0 10px; }
+</style>
+</head>
+<body>
+<h1>Mochi: every pose</h1>
+<div class="bubble-demo"><div class="px-bubble">you've been sitting for 58 min. walk with me? <div class="b-btns"><button class="primary">let's go</button><button>10 more min</button></div></div></div>
+<div class="grid" id="grid"></div>
+<script src="pet.js"></script>
+<script>
+  const q = new URLSearchParams(location.search);
+  const only = q.get('only'), scale = +(q.get('scale') || 5);
+  const views = [];
+  for (const p of (only ? only.split(',') : Critter.POSES)) {
+    const c = document.createElement('div'); c.className = 'cell';
+    const m = document.createElement('div'); const label = document.createElement('div'); label.textContent = p;
+    c.append(m, label); grid.append(c);
+    views.push(new Critter(m, { pose: p, scale }));
+  }
+  addEventListener('pointermove', (e) => views.forEach((v) => v.lookAtPoint(e.clientX, e.clientY)));
+</script>
+</body>
+</html>
