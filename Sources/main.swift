@@ -134,7 +134,7 @@ final class PetWebView: WKWebView {
 final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavigationDelegate, NSMenuDelegate {
     var panel: PetPanel!
     var web: PetWebView!
-    var statusItem: NSStatusItem!
+    var statusItem: NSStatusItem?
 
     // Mochi is drawn 46×34 "pixels", each `scale` points wide. The window adds room for a speech bubble above it
     // and, for when it's perched near the top of a screen, below it. Everything but Mochi and its bubble lets clicks through.
@@ -195,6 +195,10 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
     var followClaude: Bool { defaults.object(forKey: "followClaude") as? Bool ?? true }
     var narrateClaude: Bool { defaults.object(forKey: "narrateClaude") as? Bool ?? true }
     lazy var claude = ClaudeCode(dataDir: dataDir)
+    lazy var claudeLinked = claude.connected
+    enum BarMode: String { case usage, icon, hidden }
+    var barMode: BarMode { BarMode(rawValue: defaults.string(forKey: "menuBar") ?? "") ?? .usage }
+    var lastBadge = ""
     var lastClaude = ""
     var claudeState = ""
     var attentionAt = 0.0
@@ -377,6 +381,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
         if ticks % 2 == 0 { pushSys() }
         claude.prune()
         pushClaude()
+        if ticks % 30 == 0 { updateBadge() }   // a usage window may have reset
     }
 
     /// Which app you're in, calls, fullscreen, music, battery, dark mode. Sent only when something changes.
@@ -403,6 +408,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
         guard s != lastClaude else { return }
         lastClaude = s
         js("window.mochi && mochi.claude(\(s))")
+        updateBadge()
         let state = d["state"] as? String ?? ""
         // Claude needs you: come over to where your pointer is, so you notice
         if state == "waiting" && claudeState != "waiting" && followClaude && roam && motion == .still && panel.isVisible {
@@ -416,6 +422,8 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
         let on = !claude.connected
         do {
             try claude.connect(on)
+            claudeLinked = on
+            updateBadge()
             if on { js("mochi.claudeConnected(true, '')") }
         } catch {
             NSLog("[mochi] claude: %@", error.localizedDescription)
@@ -811,11 +819,18 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
             if roamLevel == 0 && motion == .walk { settle(nil, landed: false) }
             if roamLevel >= 2 { nextRoam = min(nextRoam, CACurrentMediaTime() + 4) }
         case "menu":
+            if barMode == .hidden {
+                let menu = NSMenu()
+                menuNeedsUpdate(menu)
+                menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
+                return
+            }
             let menu = NSMenu()
             addClaudeSessions(to: menu)
             addPetItems(to: menu)
             menu.addItem(.separator())
             menu.addItem(claudeMenu())
+            menu.addItem(barMenu())
             menu.addItem(item("Hide Mochi", #selector(toggleVisible)))
             menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
         case "save":
@@ -876,16 +891,94 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
     // MARK: menus
 
     func buildStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        statusItem.button?.image = Self.menuIcon()
-        statusItem.button?.toolTip = "Mochi"
+        if let statusItem { NSStatusBar.system.removeStatusItem(statusItem) }
+        statusItem = nil
+        lastBadge = ""
+        guard barMode != .hidden else { return }
+        let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let menu = NSMenu()
         menu.delegate = self
-        statusItem.menu = menu
+        item.menu = menu
+        statusItem = item
+        updateBadge()
+    }
+
+    /// The menu bar shows your Claude usage once Claude Code is connected, and Mochi's icon otherwise.
+    func updateBadge() {
+        guard let button = statusItem?.button else { return }
+        let five = claude.current(claude.fiveHour)
+        let usage = barMode == .usage && (five != nil || claudeLinked)
+        let key = usage ? five.map { "\(Int($0.pct.rounded()))" } ?? "-" : "icon"
+        guard key != lastBadge else { return }
+        lastBadge = key
+        if !usage {
+            button.image = Self.menuIcon()
+            button.toolTip = "Mochi"
+        } else if let five {
+            button.image = UsageBadge.image("\(Int(five.pct.rounded()))%", dim: false)
+            button.toolTip = "Claude: \(Int(five.pct.rounded()))% of your 5-hour limit used" + (five.resets.map { ", resets \(UsageBadge.when($0))" } ?? "")
+        } else {
+            button.image = UsageBadge.image("C", dim: true)
+            button.toolTip = "Claude usage shows up here after your next Claude Code message"
+        }
+    }
+
+    /// Your Claude plan's usage, as bars, at the top of the menu.
+    func addUsage(to menu: NSMenu) {
+        let five = claude.current(claude.fiveHour), week = claude.current(claude.weekly)
+        guard five != nil || week != nil else { return }
+        let head = NSMenuItem(title: "Claude Usage", action: nil, keyEquivalent: "")
+        head.isEnabled = false
+        menu.addItem(head)
+        for (title, w) in [("5-hour", five), ("Weekly", week)] {
+            guard let w else { continue }
+            let it = NSMenuItem()
+            it.view = UsageRow(title: title, window: w)
+            menu.addItem(it)
+        }
+        if let at = claude.usageAt {
+            let ago = RelativeDateTimeFormatter().localizedString(for: at, relativeTo: Date())
+            let note = NSMenuItem(title: "Updated \(ago)", action: nil, keyEquivalent: "")
+            note.isEnabled = false
+            menu.addItem(note)
+        }
+        menu.addItem(.separator())
+    }
+
+    @objc func setBarMode(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let mode = BarMode(rawValue: raw) else { return }
+        defaults.set(raw, forKey: "menuBar")
+        buildStatusItem()
+        if mode == .hidden {
+            if !panel.isVisible { toggleVisible() }
+            js("mochi.play('wave', 'menu bar icon hidden! right-click me for the menu')")
+        }
+    }
+
+    func barMenu() -> NSMenuItem {
+        let top = NSMenuItem(title: "Menu Bar", action: nil, keyEquivalent: "")
+        if !emoji { top.image = Self.symbol("menubar.rectangle") }
+        let sub = NSMenu()
+        for (title, mode) in [("Claude Usage", BarMode.usage), ("Mochi Icon", .icon), ("Hidden", .hidden)] {
+            let it = item(title, #selector(setBarMode(_:)))
+            it.representedObject = mode.rawValue
+            it.state = barMode == mode ? .on : .off
+            if mode == .hidden { it.toolTip = "Right-click Mochi for the menu. If Mochi is hidden too, open the app again to bring it back." }
+            sub.addItem(it)
+        }
+        top.submenu = sub
+        return top
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // opening Mochi again brings it back, the only way back when it and the menu bar icon are both hidden
+        if !panel.isVisible { toggleVisible() }
+        return false
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        addUsage(to: menu)
         addClaudeSessions(to: menu)
         let head = NSMenuItem(title: "Mochi is \(mood)", action: nil, keyEquivalent: "")
         head.isEnabled = false
@@ -916,6 +1009,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
         a.state = appAware ? .on : .off
         menu.addItem(a)
         menu.addItem(claudeMenu())
+        menu.addItem(barMenu())
         let e = item("Use Emoji", #selector(toggleEmoji))
         e.state = emoji ? .on : .off
         menu.addItem(e)
