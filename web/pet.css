@@ -51,6 +51,10 @@
 .px-bubble.pop { animation: px-pop 0.28s steps(4, end); }
 @keyframes px-pop { from { transform: translateY(6px) scale(0.6); opacity: 0; } to { transform: none; opacity: 1; } }
 
+/* pixel icons standing in for emoji (see icons.js) */
+.px-bubble .px-icon { display: inline-block; vertical-align: -1px; margin: 0 3px; image-rendering: pixelated; }
+.px-bubble button .px-icon { margin: 0 4px 0 0; vertical-align: 0; }
+
 .px-bubble .b-btns { display: flex; flex-wrap: wrap; gap: 9px; margin-top: 9px; }
 .px-bubble .b-btns[hidden] { display: none; }
 .px-bubble button {
