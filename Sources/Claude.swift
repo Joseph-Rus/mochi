@@ -235,8 +235,9 @@ final class ClaudeCode {
 
     private func onStatus(_ j: [String: Any]) {
         if let r = j["rate_limits"] as? [String: Any] {
-            if let w = Self.window(r["five_hour"]) { fiveHour = w }
-            if let w = Self.window(r["seven_day"]) { weekly = w }
+            // each update is the whole picture: a window it leaves out has reset, so don't keep an old number for it
+            fiveHour = Self.window(r["five_hour"])
+            weekly = Self.window(r["seven_day"])
             usageAt = Date()
             var saved: [String: Any] = ["at": usageAt!.timeIntervalSince1970]
             if let w = fiveHour { saved["five"] = ["used_percentage": w.pct, "resets_at": w.resets?.timeIntervalSince1970 ?? 0] }

@@ -81,15 +81,15 @@ Connect it from the menu (**Claude Code → Connect Claude Code…**, or say yes
 
 The idea and the hook events come from [claude-desktop-pet](https://github.com/Harriszed/claude-desktop-pet) (MIT), rebuilt here natively with Mochi's own art.
 
-With several sessions going, the most urgent one wins (anything that needs you first), and the menu lists each one; click one to switch to it. Turn off **Say What Claude Is Doing** to only hear when Claude needs you or is done, or **Act Out What Claude Is Doing** to ignore it altogether.
+With several sessions going, the most urgent one wins (anything that needs you first), and the panel's Claude tab lists each one; click one to switch to it. Turn off **Say What Claude Is Doing** to only hear when Claude needs you or is done, or **Act Out What Claude Is Doing** to ignore it altogether.
 
 ### The menu bar
 
 **Menu Bar** picks what's up there:
 
-- **Claude Usage** (the default): once Claude Code is connected, a badge with how much of your 5-hour limit you've used, like [AI Usage](https://github.com/eli-manning/Ai-Usage). The menu opens with 5-hour and weekly bars and when each resets. Pro and Max plans only; it fills in after your next Claude Code message.
+- **Claude Usage** (the default): once Claude Code is connected, a badge with how much of your 5-hour limit you've used, like [AI Usage](https://github.com/eli-manning/Ai-Usage). Click it for 5-hour and weekly gauges and when each resets. Pro and Max plans only; it fills in after your next Claude Code message.
 - **Mochi Icon**: Mochi's silhouette.
-- **Hidden**: nothing. Right-click Mochi for the whole menu. If you hide Mochi too, open the app again to bring it back.
+- **Hidden**: nothing. Right-click Mochi for the panel. If you hide Mochi too, open the app again to bring it back.
 
 It also cheers you on every 20–35 minutes, throws confetti on each hour you've worked, and gets heart eyes when you hover over it.
 
@@ -101,13 +101,12 @@ It also cheers you on every 20–35 minutes, throws confetti on each hour you've
 
 ## Using it
 
-- **Drag** Mochi anywhere and let go (or throw it). **Click** to boop it. **Right-click** for the menu.
-- The menu bar icon shows today's stats, lets you log water/coffee/walks, dress it up, send it to **Sit on My Window** or **Go Explore**, and has:
-  - **Size**: Tiny, Small (the default), Medium, Large.
-  - **Let Mochi Roam Around**: turn off to keep it exactly where you put it, no gravity.
-  - **Claude Code**: connect or disconnect, and how much Mochi follows along.
-  - **Menu Bar**: Claude Usage, Mochi Icon, or Hidden.
-  - **React to Apps & Calls**, **Use Emoji**, **Quiet for an Hour**, **Open at Login**.
+- **Drag** Mochi anywhere and let go (or throw it). **Click** to boop it.
+- **Click the menu bar icon, or right-click Mochi**, for Mochi's panel. Right-click the menu bar icon for just Show/Hide and Quit. The panel has four tabs:
+  - **Claude**: your 5-hour and weekly usage, and each Claude Code session with what it's doing (click one to switch to it). Connect Claude Code from here too.
+  - **Today**: time at the computer, how long you've been sitting, water, coffee, energy drinks and breaks, and buttons to log them.
+  - **Play**: cheer me on, how am I doing, play ball, water the plant, **Sit on My Window**, **Go Explore**, and costumes.
+  - **Settings**: size, roaming (off keeps it exactly where you put it, no gravity), reacting to apps and calls, quiet hour, open at login; Claude Code; the menu bar and emoji.
 
 ## Building
 
@@ -132,7 +131,8 @@ Re-render the PNGs in `renders/`: `Mochi.app/Contents/MacOS/Mochi --render <fold
 ## Files
 
 - `Sources/Claude.swift`: Claude Code: the local listener its hooks talk to, what each session is doing, usage limits, and connecting/disconnecting `~/.claude/settings.json`.
-- `Sources/MenuBar.swift`: the usage badge and the usage bars in the menu.
+- `Sources/MenuBar.swift`: the usage badge in the menu bar.
+- `Sources/Panel.swift`: the panel (SwiftUI, in a borderless window, styled like AI Usage's popover).
 - `Sources/main.swift`: the Mac app: transparent always-on-top window, how Mochi gets around (screens and window tops become ledges; walking, hopping, falling, riding), sensors (idle, sleep/wake, app in front, camera/mic, battery), menus, saving.
 - `web/pet.js`: the critter. Every pose and prop is drawn as pixel strings on a 46×34 canvas.
 - `web/brain.js`: decides what Mochi does and says, and how much it may roam right now (it stays put while you type).

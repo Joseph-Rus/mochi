@@ -1,4 +1,4 @@
-// The menu bar: how much of your Claude plan you've used (a badge like AI Usage's), Mochi's icon, or nothing at all.
+// The menu bar: how much of your Claude plan you've used, as a badge like AI Usage's (or Mochi's icon, or nothing).
 import AppKit
 
 enum UsageBadge {
@@ -49,38 +49,5 @@ enum UsageBadge {
         let f = DateFormatter()
         f.setLocalizedDateFormatFromTemplate(d.timeIntervalSinceNow < 20 * 3600 ? "jmm" : "EEE jmm")
         return f.string(from: d)
-    }
-}
-
-/// One usage window in the menu: its name, how much is used and when it resets, and a bar.
-final class UsageRow: NSView {
-    let title: String
-    let usage: UsageWindow
-
-    init(title: String, window: UsageWindow) {
-        self.title = title
-        self.usage = window
-        super.init(frame: NSRect(x: 0, y: 0, width: 280, height: 40))
-    }
-
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func draw(_ dirty: NSRect) {
-        let inset: CGFloat = 14
-        let pct = min(max(usage.pct, 0), 100)
-        let label: [NSAttributedString.Key: Any] = [.font: NSFont.menuFont(ofSize: 13), .foregroundColor: NSColor.labelColor]
-        (title as NSString).draw(at: NSPoint(x: inset, y: 19), withAttributes: label)
-        var right = "\(Int(pct.rounded()))%"
-        if let r = usage.resets { right += " · resets \(UsageBadge.when(r))" }
-        let small: [NSAttributedString.Key: Any] = [.font: NSFont.menuFont(ofSize: 11), .foregroundColor: NSColor.secondaryLabelColor]
-        let w = (right as NSString).size(withAttributes: small).width
-        (right as NSString).draw(at: NSPoint(x: bounds.width - inset - w, y: 20), withAttributes: small)
-        let track = NSRect(x: inset, y: 8, width: bounds.width - inset * 2, height: 6)
-        NSColor.quaternaryLabelColor.setFill()
-        NSBezierPath(roundedRect: track, xRadius: 3, yRadius: 3).fill()
-        var fill = track
-        fill.size.width = max(track.height, track.width * pct / 100)
-        (pct >= 90 ? NSColor.systemRed : UsageBadge.claude).setFill()
-        NSBezierPath(roundedRect: fill, xRadius: 3, yRadius: 3).fill()
     }
 }

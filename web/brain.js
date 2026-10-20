@@ -662,7 +662,7 @@
       type: 'stats',
       mood: MOODS[view.current] || 'chilling',
       quiet: quiet(),
-      lines: [`Active today: ${fmt(S.day.active)}`, `Sitting for: ${fmt(S.sit)}`, `Water ${S.day.water} · Coffee ${S.day.coffee} · Energy ${S.day.energy || 0} · Breaks ${S.day.breaks}`],
+      stats: { active: fmt(S.day.active), sitting: fmt(S.sit), water: S.day.water, coffee: S.day.coffee, energy: S.day.energy || 0, breaks: S.day.breaks, walks: S.day.walks },
     });
   }
 
