@@ -8,7 +8,8 @@
   html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; cursor: default; -webkit-user-select: none; user-select: none; }
   #stage { position: relative; width: var(--w, 320px); height: var(--h, 360px); }
   #pet { position: absolute; left: var(--pet-left, 22px); bottom: var(--pet-bottom, 0px); }
-  #bubbleWrap { position: absolute; left: 0; right: 0; bottom: var(--bubble-above, 150px); display: flex; justify-content: center; pointer-events: none; }
+  /* above #pet: Mochi's canvas is taller than Mochi, and its empty top would otherwise sit over the bubble's buttons and eat their clicks */
+  #bubbleWrap { position: absolute; z-index: 1; left: 0; right: 0; bottom: var(--bubble-above, 150px); display: flex; justify-content: center; pointer-events: none; }
   #bubbleWrap.below { bottom: auto; top: var(--bubble-below, 0px); }
   #bubble { pointer-events: auto; }
   html.render #stage { width: 276px; height: 204px; }
