@@ -121,6 +121,10 @@ final class PetPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+extension NSFont {
+    var bold: NSFont { NSFontManager.shared.convert(self, toHaveTrait: .boldFontMask) }
+}
+
 final class PetWebView: WKWebView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }
@@ -188,6 +192,12 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
     var roam: Bool { defaults.object(forKey: "roam") as? Bool ?? true }
     var appAware: Bool { defaults.object(forKey: "appAware") as? Bool ?? true }
     var emoji: Bool { defaults.bool(forKey: "emoji") }   // off: pixel icons in the bubble, SF Symbols in the menus
+    var followClaude: Bool { defaults.object(forKey: "followClaude") as? Bool ?? true }
+    var narrateClaude: Bool { defaults.object(forKey: "narrateClaude") as? Bool ?? true }
+    lazy var claude = ClaudeCode(dataDir: dataDir)
+    var lastClaude = ""
+    var claudeState = ""
+    var attentionAt = 0.0
     lazy var dataDir: URL = {
         let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Mochi", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -212,6 +222,8 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
         buildPanel()
         buildStatusItem()
         observeSystem()
+        claude.onChange = { [weak self] in self?.pushClaude() }
+        claude.start()
         if !defaults.bool(forKey: "loginConfigured") {
             defaults.set(true, forKey: "loginConfigured")
             setOpenAtLogin(true)
@@ -230,8 +242,10 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
             saved = s
         }
         var env: [String: Any] = ["app": true, "boot": bootTime() * 1000, "launched": Date().timeIntervalSince1970 * 1000,
-                                  "scale": scale, "w": size.width, "h": size.height, "below": App.below, "emoji": emoji]
+                                  "scale": scale, "w": size.width, "h": size.height, "below": App.below, "emoji": emoji,
+                                  "claude": followClaude, "narrate": narrateClaude]
         if let speed = ProcessInfo.processInfo.environment["MOCHI_SPEED"], let v = Double(speed) { env["speed"] = v }
+        if ProcessInfo.processInfo.environment["MOCHI_TRACE"] != nil { env["trace"] = true }
         let boot = "window.MOCHI_SAVED = \(saved); window.MOCHI_ENV = \(json(env));"
         ucc.addUserScript(WKUserScript(source: boot, injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let cfg = WKWebViewConfiguration()
@@ -258,8 +272,15 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         lastSys = ""
         lastRoom = ""
+        lastClaude = ""
         pushSys()
         sendRoom()
+        pushClaude()
+        // Claude Code is on this Mac but not connected yet: offer once
+        if claude.hasClaudeCode && !claude.connected && !defaults.bool(forKey: "claudeOffered") {
+            defaults.set(true, forKey: "claudeOffered")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in self?.js("mochi.claudeHint()") }
+        }
     }
 
     func js(_ code: String) { web?.evaluateJavaScript(code, completionHandler: nil) }
@@ -354,6 +375,8 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
         js("window.mochi && mochi.tick(\(json(payload)))")
         ticks += 1
         if ticks % 2 == 0 { pushSys() }
+        claude.prune()
+        pushClaude()
     }
 
     /// Which app you're in, calls, fullscreen, music, battery, dark mode. Sent only when something changes.
@@ -369,6 +392,105 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
         }
         let s = json(d)
         if s != lastSys { lastSys = s; js("window.mochi && mochi.sys(\(s))") }
+    }
+
+    // MARK: Claude Code
+
+    /// Tells the page what Claude Code is up to, when that changes.
+    func pushClaude() {
+        let d = claude.payload()
+        let s = json(d)
+        guard s != lastClaude else { return }
+        lastClaude = s
+        js("window.mochi && mochi.claude(\(s))")
+        let state = d["state"] as? String ?? ""
+        // Claude needs you: come over to where your pointer is, so you notice
+        if state == "waiting" && claudeState != "waiting" && followClaude && roam && motion == .still && panel.isVisible {
+            let now = CACurrentMediaTime()
+            if now - attentionAt > 45 { attentionAt = now; visitPointer(NSEvent.mouseLocation) }
+        }
+        claudeState = state
+    }
+
+    @objc func connectClaude() {
+        let on = !claude.connected
+        do {
+            try claude.connect(on)
+            if on { js("mochi.claudeConnected(true, '')") }
+        } catch {
+            NSLog("[mochi] claude: %@", error.localizedDescription)
+            js("mochi.claudeConnected(false, \(json([error.localizedDescription]))[0])")
+        }
+    }
+
+    @objc func toggleFollowClaude() {
+        defaults.set(!followClaude, forKey: "followClaude")
+        js("mochi.setClaude(\(followClaude), \(narrateClaude))")
+    }
+
+    @objc func toggleNarrateClaude() {
+        defaults.set(!narrateClaude, forKey: "narrateClaude")
+        js("mochi.setClaude(\(followClaude), \(narrateClaude))")
+    }
+
+    @objc func focusClaude(_ sender: NSMenuItem) {
+        claude.focus((sender.representedObject as? String).flatMap { claude.sessions[$0] })
+    }
+
+    /// "editing App.tsx", for the menu.
+    func describe(_ s: ClaudeSession) -> String {
+        let now = Date().timeIntervalSince1970
+        if s.need == "question" { return "has a question for you" }
+        if s.need != nil { return s.needTool.isEmpty ? "needs your OK" : "needs your OK to use \(s.needTool)" }
+        if now < s.errorUntil { return "hit an error" }
+        if s.busy && s.helpers > 0 { return s.helpers == 1 ? "running a helper" : "running \(s.helpers) helpers" }
+        if !s.tool.isEmpty && (s.running > 0 || now < s.toolUntil) {
+            let verb = ["reading": "reading", "writing": s.toolName == "Write" ? "writing" : "editing", "searchCode": "searching",
+                        "searchWeb": "searching the web", "testing": "running tests", "committing": "committing", "server": "starting a server",
+                        "plan": "updating the plan"][s.tool]
+            if let verb { return s.detail.isEmpty || ["testing", "committing", "plan"].contains(s.tool) ? verb : "\(verb) \(s.detail)" }
+            return s.detail.isEmpty ? "working" : s.detail
+        }
+        if s.busy { return "thinking" }
+        if now < s.doneUntil { return "done" }
+        return "idle"
+    }
+
+    func addClaudeSessions(to menu: NSMenu) {
+        let list = claude.sessions.values.sorted { $0.last > $1.last }
+        guard followClaude, !list.isEmpty else { return }
+        for s in list.prefix(8) {
+            let it = item("\(s.project): \(describe(s))", #selector(focusClaude(_:)))
+            it.representedObject = s.id
+            it.toolTip = s.cwd.isEmpty ? nil : "\(s.cwd)\nClick to switch to it"
+            if !emoji { it.image = Self.symbol(s.need != nil ? "exclamationmark.bubble" : s.busy ? "ellipsis.circle" : "checkmark.circle") }
+            if s.need != nil { it.attributedTitle = NSAttributedString(string: it.title, attributes: [.font: NSFont.menuFont(ofSize: 0).bold]) }
+            menu.addItem(it)
+        }
+        menu.addItem(.separator())
+    }
+
+    func claudeMenu() -> NSMenuItem {
+        let top = NSMenuItem(title: "Claude Code", action: nil, keyEquivalent: "")
+        if !emoji { top.image = Self.symbol("sparkle") }
+        let sub = NSMenu()
+        let connected = claude.connected
+        let status = NSMenuItem(title: !claude.listening ? "Couldn't listen on port \(ClaudeCode.port)" : connected ? "Connected" : "Not connected", action: nil, keyEquivalent: "")
+        status.isEnabled = false
+        sub.addItem(status)
+        let c = item(connected ? "Disconnect Claude Code" : "Connect Claude Code…", #selector(connectClaude))
+        c.toolTip = connected ? "Removes Mochi's hooks and status line from ~/.claude/settings.json" : "Adds Mochi's hooks and status line to ~/.claude/settings.json (backed up first). Restart Claude Code sessions after."
+        sub.addItem(c)
+        sub.addItem(.separator())
+        let f = item("Act Out What Claude Is Doing", #selector(toggleFollowClaude))
+        f.state = followClaude ? .on : .off
+        sub.addItem(f)
+        let n = item("Say What Claude Is Doing", #selector(toggleNarrateClaude))
+        n.state = narrateClaude ? .on : .off
+        n.toolTip = "Off: Mochi only speaks up when Claude needs you or is done"
+        sub.addItem(n)
+        top.submenu = sub
+        return top
     }
 
     // MARK: getting around
@@ -690,8 +812,10 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
             if roamLevel >= 2 { nextRoam = min(nextRoam, CACurrentMediaTime() + 4) }
         case "menu":
             let menu = NSMenu()
+            addClaudeSessions(to: menu)
             addPetItems(to: menu)
             menu.addItem(.separator())
+            menu.addItem(claudeMenu())
             menu.addItem(item("Hide Mochi", #selector(toggleVisible)))
             menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
         case "save":
@@ -701,7 +825,12 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
             mood = body["mood"] as? String ?? mood
             quiet = body["quiet"] as? Bool ?? false
         case "log":
-            NSLog("[mochi] %@", String(describing: body["msg"] ?? ""))
+            let msg = String(describing: body["msg"] ?? "")
+            if ProcessInfo.processInfo.environment["MOCHI_TRACE"] != nil { rlog(msg) } else { NSLog("[mochi] %@", msg) }
+        case "claudeFocus":
+            claude.focus(nil)
+        case "claudeConnect":
+            if !claude.connected { connectClaude() }
         default:
             break
         }
@@ -757,6 +886,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
 
     func menuNeedsUpdate(_ menu: NSMenu) {
         menu.removeAllItems()
+        addClaudeSessions(to: menu)
         let head = NSMenuItem(title: "Mochi is \(mood)", action: nil, keyEquivalent: "")
         head.isEnabled = false
         menu.addItem(head)
@@ -785,6 +915,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
         let a = item("React to Apps & Calls", #selector(toggleAppAware))
         a.state = appAware ? .on : .off
         menu.addItem(a)
+        menu.addItem(claudeMenu())
         let e = item("Use Emoji", #selector(toggleEmoji))
         e.state = emoji ? .on : .off
         menu.addItem(e)

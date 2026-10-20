@@ -8,6 +8,7 @@
   const post = (m) => { try { if (native) native.postMessage(m); } catch (e) { /* app went away */ } };
   const log = (msg) => { post({ type: 'log', msg }); if (!native) console.log('[mochi]', msg); };
   addEventListener('error', (e) => log(`error: ${e.message} (line ${e.lineno})`));
+  const trace = ENV.trace ? log : () => {};   // MOCHI_TRACE=1: log every pose and line to the terminal
 
   const petEl = document.getElementById('pet');
   const bubbleEl = document.getElementById('bubble');
@@ -116,6 +117,7 @@
   const bubble = {
     show(text, buttons, onChoose) {
       R.bubbleText = text;
+      trace(`says: ${text}${buttons ? ' ' + JSON.stringify(buttons.map((b) => b[0])) : ''}`);
       R.bubbleButtons = buttons;
       MochiIcons.render(bubbleEl.querySelector('.b-text'), text, emoji);
       const box = bubbleEl.querySelector('.b-btns');
@@ -159,7 +161,7 @@
     if (R.scene) { const old = R.scene; R.scene = null; if (old.buttons && old.onChoose && !sc.fromChoice) old.onChoose('timeout'); }
     R.scene = Object.assign({ start: R.now }, sc);
     R.scene.until = R.now + (sc.dur || 5) * SEC;
-    if (!R.move && !R.dragging) view.pose(sc.pose || 'idle');
+    if (!R.move && !R.dragging) { view.pose(sc.pose || 'idle'); trace(`scene: ${sc.pose || 'idle'}`); }
     if (sc.fx) view.burst(sc.fx, sc.fxN || 5);
     if (sc.say) {
       bubble.show(sc.say, sc.buttons, choose);
@@ -394,6 +396,73 @@
     }
   }
 
+  // ---------- Claude Code: what it's up to (main.swift hears about it from Claude Code's hooks) ----------
+  const CLAUDE_POSES = {
+    waiting: 'needsYou', error: 'oops', compacting: 'squish', agents: 'conduct', reading: 'read', writing: 'type',
+    searchCode: 'detective', searchWeb: 'binoculars', command: 'terminal', testing: 'clipboard', server: 'terminal',
+    committing: 'ship', plan: 'clipboard', tool: 'terminal', thinking: 'think', contextFull: 'sweaty', done: 'cheer', hello: 'wave',
+  };
+  const C = { on: ENV.claude !== false, narrate: ENV.narrate !== false, state: '', d: {}, said: '', saidAt: 0 };
+  const claudePose = () => (C.on && C.state ? CLAUDE_POSES[C.state] : null);
+  // Claude's news still gets said in a fullscreen app (that's often where you code), just not on a call or in a quiet hour
+  const claudeHush = () => quiet() || R.sys.call;
+  function claudeSay(text, ms) {
+    if (R.scene || claudeHush()) return;
+    bubble.show(text, null, choose);
+    R.blurtT = setTimeout(() => { if (!R.scene) bubble.hide(); }, ms);
+  }
+  function claudeLine(d) {
+    const x = d.detail ? ' ' + d.detail : '';
+    const where = d.sessions > 1 && d.project ? ` in ${d.project}` : '';
+    switch (d.state) {
+      case 'waiting': return d.need === 'question' ? `claude has a question for you${where}` : `claude needs your ok${d.needTool ? ' to use ' + d.needTool : ''}${where}`;
+      case 'error': return `hmm, that didn't work${d.detail ? ': ' + d.detail : ''}`;
+      case 'compacting': return 'claude is tidying up its memory...';
+      case 'agents': return d.helpers > 1 ? `${d.helpers} helpers on it!` : 'sent a helper off to work';
+      case 'reading': return 'reading' + x;
+      case 'writing': return (d.tool === 'Write' ? 'writing' : 'editing') + x;
+      case 'searchCode': return d.detail ? `looking for ${d.detail}` : 'searching the code';
+      case 'searchWeb': return d.tool === 'WebFetch' ? 'reading' + (x || ' a page') : d.detail ? `looking up ${d.detail}` : 'searching the web';
+      case 'testing': return 'running the tests...';
+      case 'committing': return /push/i.test(d.detail) ? 'pushing it up!' : 'committing!';
+      case 'server': return 'starting the server';
+      case 'command': case 'tool': return d.detail || 'running a command';
+      case 'plan': return d.todo ? `updating the plan: ${d.todo[0]} of ${d.todo[1]} done` : 'making a plan';
+      case 'contextFull': return "claude's memory is almost full";
+      case 'done': return pick(['all done! :check:', 'done! :check: your turn', 'finished! :check:']) + where;
+      case 'hello': return `ooh, claude code${d.project ? ' in ' + d.project : ''}! i'll follow along`;
+    }
+    return '';
+  }
+  function onClaude(d) {
+    const t = (R.now = Date.now());
+    const was = C.state;
+    C.d = d;
+    C.state = d.state || '';
+    if (!C.on) return;
+    const sc = R.scene;
+    if (C.state === 'waiting' && was !== 'waiting') {
+      if (sc && sc.kind !== 'claude') endScene();
+      if (!claudeHush()) {
+        play({ pose: 'needsYou', say: claudeLine(d), dur: 30 * 60, kind: 'claude', buttons: [[':hand: show me', 'go'], ['ok', 'ok']],
+          onChoose: (c) => { if (c === 'go') post({ type: 'claudeFocus' }); } });
+      }
+    } else if (was === 'waiting' && C.state !== 'waiting' && sc && sc.kind === 'claude') {
+      R.scene = null;
+      bubble.hide();
+    }
+    if (C.state && C.state !== 'waiting') {
+      const line = claudeLine(d), key = C.state + '|' + (d.detail || '');
+      // say when it's done; narrate the rest only if you want that, and never more than every few seconds
+      const worth = C.state === 'done' || (C.narrate && C.state !== 'thinking' && (['error', 'hello'].includes(C.state) || t - C.saidAt > 7 * SEC));
+      if (line && worth && key !== C.said) { C.said = key; C.saidAt = t; claudeSay(line, C.state === 'done' ? 3500 : 2600); }
+      if (C.state === 'done' && was !== 'done') view.burst('sparkle', 6);
+    }
+    R.ambient = '';
+    ambient(t, R.last || IDLE);
+    updateRoam();
+  }
+
   // ---------- what Mochi does when nothing's going on: mirror you ----------
   const TOYS = ['juggle', 'plant'];
   const MOVE_POSES = { walk: 'stroll', crouch: 'crouch', jump: 'jump', fall: 'fall' };
@@ -401,13 +470,15 @@
   function ambient(t, s) {
     if (!s) return;
     let p;
-    const urgent = R.dragging || R.move || t < R.landUntil || t < R.dizzyUntil;
+    const cp = claudePose();
+    const urgent = R.dragging || R.move || t < R.landUntil || t < R.dizzyUntil || !!cp;
     if (R.dragging) p = 'dangle';
     else if (R.move) p = MOVE_POSES[R.move] || 'stroll';
     else if (t < R.landUntil) p = 'land';
     else if (t < R.dizzyUntil) p = 'dizzy';
     else if (R.scene) return;
     else if (R.sys.call) p = 'shh';
+    else if (cp) p = cp;                                     // acting out what Claude Code is doing
     else if (s.idle >= CFG.sleepIdle) p = isNight(t) ? 'nightSleep' : 'nap';
     else if (s.idle >= CFG.awayIdle) {
       if (t - R.toyAt > 50 * SEC) { R.toyIdx++; R.toyAt = t; }
@@ -434,6 +505,7 @@
     if (sticky && !urgent && t - R.ambientAt < 8 * SEC) return; // don't flicker between typing and not typing
     R.ambient = p;
     R.ambientAt = t;
+    trace(`pose: ${p}`);
     view.pose(p);
   }
   // back to whatever Mochi should be doing after a hop, a fall or a drag
@@ -447,6 +519,7 @@
   function roamLevel(t, s) {
     if (!s || R.dragging || hush()) return 0;
     if (R.scene && !bubbleEl.hidden) return 0;            // mid-sentence
+    if (C.on && C.state === 'waiting') return 0;          // Claude needs you: stay where you can see it
     if (s.idle >= CFG.sleepIdle) return 0;                // napping
     if (R.ti > 0.22 || (R.flowSince && t - R.flowSince > 2 * MIN)) return 0; // you're typing: stay put, keep you company
     return s.idle >= CFG.awayIdle ? 2 : 1;                // you stepped away: go play
@@ -579,6 +652,9 @@
     stroll: 'going for a stroll', crouch: 'about to jump', jump: 'jumping', fall: 'falling!', land: 'landing', dizzy: 'dizzy',
     shh: "being quiet (you're on a call)", popcorn: 'watching with you', jam: 'vibing to your music', duck: 'rubber-duck debugging',
     lowbatt: 'low on battery', zap: 'charging up', shades: 'too cool',
+    think: 'thinking along with Claude', needsYou: 'waiting for you (Claude needs you)', terminal: 'running commands',
+    clipboard: 'checking things off', binoculars: 'searching the web', ship: 'shipping it', conduct: 'directing helpers',
+    squish: 'squishing its memory', oops: 'oops',
   };
   function postStats() {
     R.statsAt = R.now;
@@ -672,6 +748,26 @@
       setTimeout(restorePose, 3600);
     },
     sys: onSys,
+    claude: onClaude,
+    setClaude(on, narrate) {
+      C.on = !!on;
+      C.narrate = !!narrate;
+      if (!C.on && R.scene && R.scene.kind === 'claude') { R.scene = null; bubble.hide(); }
+      R.ambient = '';
+      ambient(Date.now(), R.last || IDLE);
+      updateRoam();
+    },
+    // first run with Claude Code around: offer to follow along
+    claudeHint() {
+      R.now = Date.now();
+      ask('wave', "psst! you use claude code. want me to act out what it's doing?", [['yes please', 'yes'], ['not now', 'no']],
+        (c) => { if (c === 'yes') post({ type: 'claudeConnect' }); });
+    },
+    claudeConnected(ok, why) {
+      R.now = Date.now();
+      if (ok) say('cheer', "connected! restart your claude code sessions and i'll follow along :sparkle:", 8, 'sparkle');
+      else say('sweaty', `couldn't connect to claude code: ${why}`, 8);
+    },
     setEmoji(on) {
       emoji = !!on;
       if (!bubbleEl.hidden && R.bubbleText != null) {   // redraw what's showing

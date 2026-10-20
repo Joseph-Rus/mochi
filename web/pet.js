@@ -95,6 +95,9 @@
     magnifier: { s: sp(['.ggg.', 'gAAwg', 'gAAAg', 'gAAAg', '.ggg.', 'h....', 'h....']), grab: [0, 6] },
     popcorn: { s: sp(['.OwOzO.', 'OzOwOwO', 'RwRwRwR', 'RwRwRwR', '.RwRwR.', '.RwRwR.']), grab: [6, 3] },
     duck: { s: sp(['..zz...', '.zezz..', 'ZZzzz..', '..zzzzz', '.zzzzzz', '..zzzz.']), grab: [6, 4] },
+    // Claude Code's work: a checklist (tests, the plan) and a parcel (a commit going out)
+    clip: { s: sp(['..gg..', 'nPggPn', 'nPPPPn', 'nPMMPn', 'nPPPPn', 'nPMMPn', 'nPPPPn', 'nnnnnn']), grab: [5, 4] },
+    box: { s: sp(['ffffffff', 'fFFzzFFf', 'fFFzzFFf', 'fFFFFFFf', 'fFFFFFFf', 'ffffffff']), grab: [7, 3] },
   };
   const LAPTOP = sp(['...KKKKKKK', '..KkkkkkkK', '..KkkkkkK.', '.KkkkkkkK.', '.KKKKKKKK.', 'gggggggggg', 'KKKKKKKKKK']);
   const BOOK = sp(['.PPPPP.PPPPP', 'NnnnnnNnnnnN', 'NnzznnNnnzzN', 'NnnnnnNnnnnN', 'NnnnnnNnnnnN', 'NNNNNNNNNNNN']);
@@ -118,6 +121,9 @@
   const MUTE = sp(['..G....', '.GG.x.x', 'GGG..x.', '.GG.x.x', '..G....']);
   const BATTERY = sp(['GGGGGGG.', 'G.....GG', 'G.....GG', 'GGGGGGG.']);
   const BOLT = sp(['..z', '.z.', 'zzz', '.z.', 'z..']);
+  const ALERT = sp(['xx', 'xx', 'xx', '..', 'xx']);
+  // a tiny helper Mochi (Claude's sub-agents)
+  const MINI = sp(['.lll.', 'bebeb', 'bbbbs', '.s.s.']);
 
   // hats & costumes: [sprite, x offset from body left, rows overlapping the body top]
   const HATS = {
@@ -244,6 +250,16 @@
     spin:        { eyes: 'happy', anim: 'spin', blush: true },
     shaken:      { eyes: 'x', mouth: 'o', armL: 'up', armR: 'up', anim: 'dangle' },
     splat:       { eyes: 'x', body: 'flat', armL: 'out', armR: 'out', anim: 'none' },
+    // following along with Claude Code
+    think:       { look: [1, -1], acc: ['dots'], anim: 'slow' },
+    needsYou:    { eyes: 'wide', acc: ['alert'], anim: 'wave' },
+    terminal:    { front: 'terminal', armR: 'tap', look: [1, 0], anim: 'type' },
+    clipboard:   { held: 'clip', armL: 'hold', armR: 'tap', look: [-1, 1], anim: 'tick' },
+    binoculars:  { acc: ['binoculars'], armL: 'holdUp', armR: 'holdUp', anim: 'scan' },
+    ship:        { eyes: 'happy', held: 'box', armL: 'hold', armR: 'hold', anim: 'offer' },
+    conduct:     { eyes: 'happy', acc: ['helpers'], anim: 'conduct', fx: ['note', 12] },
+    squish:      { eyes: 'squeeze', anim: 'squish' },
+    oops:        { eyes: 'x', mouth: 'o', acc: ['sweat'], armL: 'up', armR: 'up', anim: 'slow', fx: ['bang', 30] },
   };
 
   // ---------- animation: each one adjusts the frame state ----------
@@ -366,6 +382,10 @@
       st.bob = f % 30 >= 15 ? 1 : 0;
     },
     sniff(st, f) { st.bob = f % 6 < 3 ? 1 : 0; st.ly = 1; },
+    tick(st, f) { st.armR = f % 8 < 4 ? 'tap' : 'tap2'; st.bob = f % 30 >= 15 ? 1 : 0; },
+    scan(st, f) { const c = f % 40; st.lx = c < 14 ? -1 : c < 28 ? 1 : 0; st.bob = f % 30 >= 15 ? 1 : 0; },
+    conduct(st, f) { const a = (f >> 2) % 2; st.armL = a ? 'up' : 'out'; st.armR = a ? 'out' : 'up'; st.bob = a; st.helperHop = (f >> 1) % 4; },
+    squish(st, f) { st.body = ['base', 'flat', 'pancake', 'pancake', 'flat', 'base', 'tall', 'base'][(f >> 1) % 8]; },
     chomp(st, f) { const c = f % 6; st.mouth = c < 3 ? 'o' : 'line'; st.body = c < 3 ? 'base' : 'squash'; },
     // a full turn in the air: front, side, back, side, front
     spin(st, f, pf, v) {
@@ -622,6 +642,21 @@
       // signs over the head
       const sign = (s) => { const x = Math.round(bx + (bw - s.w) / 2), y = top - s.h - 2 - (f % 30 < 15 ? 0 : 1); this._spr(s, x, y); return [x, y]; };
       if (P.acc.includes('mute')) sign(MUTE);
+      if (P.acc.includes('alert')) sign(ALERT);
+      if (P.acc.includes('dots')) {   // ... thinking
+        const n = 1 + ((f >> 2) % 3), y = top - 4 - (f % 30 < 15 ? 0 : 1);
+        for (let i = 0; i < n; i++) { this._px(bx + bw + 1 + i * 2, y - i, 'G'); }
+      }
+      if (P.acc.includes('binoculars')) {
+        const ec = Math.round(cx) + ex, y = top + 2;
+        [ec - 6, ec + 1].forEach((x0) => { for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) this._px(x0 + i, y + j, i > 0 && i < 3 && j === 1 ? 'a' : 'K'); });
+        this._px(ec - 2, y + 1, 'K'); this._px(ec, y + 1, 'K'); this._px(ec - 1, y + 1, 'K');
+      }
+      if (P.acc.includes('helpers')) {
+        const k = st.helperHop || 0;
+        this._spr(MINI, 2, BY + BH - 2 - (k === 1 ? 1 : 0));
+        this._spr(MINI, CW - 8, BY + BH - 2 - (k === 3 ? 1 : 0), true);
+      }
       if (P.acc.includes('lowbatt')) { const [x, y] = sign(BATTERY); if (f % 10 < 6) { this._px(x + 1, y + 1, 'R'); this._px(x + 1, y + 2, 'R'); } }
       if (P.acc.includes('charging')) {
         const [x, y] = sign(BATTERY);
@@ -692,17 +727,18 @@
         pom(...hand(st.armL, 'L'));
         pom(...hand(st.armR, 'R'));
       }
-      // laptop in front, with live "code" on the screen
-      if (P.front === 'laptop') {
+      // laptop in front, with live "code" on the screen (or a terminal: green text, a block cursor)
+      if (P.front === 'laptop' || P.front === 'terminal') {
+        const term = P.front === 'terminal';
         const lx = BX + ox + 8, ly = BY + oy + 5;
         this._spr(LAPTOP, lx, ly);
         const seed = st.typing ? (f >> 1) : 0;
         const rows = [[lx + 4, ly + 1], [lx + 3, ly + 2], [lx + 3, ly + 3]];
         rows.forEach(([x0, y], row) => {
           const len = row === 2 ? 1 : 1 + ((seed * 7 + row * 5) % 3);
-          for (let i = 0; i < len; i++) this._px(x0 + i, y, 'W');
+          for (let i = 0; i < len; i++) this._px(x0 + i, y, term ? 'v' : 'W');
         });
-        if (f % 6 < 3) this._px(lx + 5, ly + 3, 'v');
+        if (f % 6 < 3) this._px(lx + 5, ly + 3, term ? 'W' : 'v');
       }
       // carrying the ball in its mouth, like a dog
       if (this.carry && TOYS[this.carry] && st.eyes !== 'none') {
