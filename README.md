@@ -87,7 +87,9 @@ With several sessions going, the most urgent one wins (anything that needs you f
 
 **Menu Bar** picks what's up there:
 
-- **Claude Usage** (the default): once Claude Code is connected, a badge with how much of your 5-hour limit you've used, like [AI Usage](https://github.com/eli-manning/Ai-Usage). Click it for 5-hour and weekly gauges and when each resets. Pro and Max plans only; it fills in after your next Claude Code message.
+- **Claude Usage** (the default): a badge with how much of your 5-hour limit you've used, like [AI Usage](https://github.com/eli-manning/Ai-Usage). Click it for 5-hour and weekly gauges and when each resets. Pro and Max plans only. It stays current two ways:
+  - **as you work**: Claude Code's status line hands Mochi the new numbers after every message (once Claude Code is connected);
+  - **on a timer**: every 5 minutes, and when you open the panel with numbers more than a minute old, Mochi runs `claude /usage` out of sight and reads the screen, like AI Usage does. It's a local command, so it doesn't send a prompt or use up your plan. Turn it off in Settings with **Check usage every 5 minutes**.
 - **Mochi Icon**: Mochi's silhouette.
 - **Hidden**: nothing. Right-click Mochi for the panel. If you hide Mochi too, open the app again to bring it back.
 
@@ -97,7 +99,7 @@ It also cheers you on every 20–35 minutes, throws confetti on each hour you've
 
 **Privacy:** Mochi reads macOS idle timers (seconds since the last key press or mouse move), the ID of the app in front (like `com.microsoft.VSCode`), where windows are on screen (positions only: no titles or contents), whether the camera, mic or speakers are in use (an on/off flag, never the audio or video), the battery level, and dark mode. It never sees what you type or what's in your windows. No permissions are needed and nothing leaves your Mac. Turn off **React to Apps & Calls** to stop it looking at apps, calls and music. State lives in `~/Library/Application Support/Mochi/state.json`.
 
-**Claude Code:** connecting adds a hook script and a status line script (both in `~/Library/Application Support/Mochi/`) to `~/.claude/settings.json`, after backing it up to `settings.json.mochi-backup`. Your other settings, hooks and key order are kept, and a status line you already had keeps showing: Mochi's passes it through. The hooks run in the background, so they never slow Claude down, and send each event (which tool, its file or command, the project folder) to Mochi over `127.0.0.1:47833`; nothing leaves your Mac. The status line passes along your plan's usage percentages and context use. **Disconnect Claude Code** takes it all back out.
+**Claude Code:** connecting adds a hook script and a status line script (both in `~/Library/Application Support/Mochi/`) to `~/.claude/settings.json`, after backing it up to `settings.json.mochi-backup`. Your other settings, hooks and key order are kept, and a status line you already had keeps showing: Mochi's passes it through. The hooks run in the background, so they never slow Claude down, and send each event (which tool, its file or command, the project folder) to Mochi over `127.0.0.1:47833`; nothing leaves your Mac. The status line passes along your plan's usage percentages and context use. The 5-minute usage check runs Claude Code in `~/Library/Application Support/Mochi/`, so it shows up there in Claude Code's session history; Mochi ignores its own check's hooks. **Disconnect Claude Code** takes it all back out.
 
 ## Using it
 

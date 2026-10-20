@@ -190,6 +190,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
     var emoji: Bool { defaults.bool(forKey: "emoji") }   // off: pixel icons in the bubble, SF Symbols in the menus
     var followClaude: Bool { defaults.object(forKey: "followClaude") as? Bool ?? true }
     var narrateClaude: Bool { defaults.object(forKey: "narrateClaude") as? Bool ?? true }
+    var checkUsage: Bool { defaults.object(forKey: "checkUsage") as? Bool ?? true }   // ask Claude Code for usage every 5 minutes
     lazy var claude = ClaudeCode(dataDir: dataDir)
     lazy var claudeLinked = claude.connected
     enum BarMode: String { case usage, icon, hidden }
@@ -222,8 +223,14 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
         buildPanel()
         buildStatusItem()
         observeSystem()
-        claude.onChange = { [weak self] in self?.pushClaude() }
+        claude.onChange = { [weak self] in
+            self?.pushClaude()
+            self?.updateBadge()
+            if self?.sheet.isOpen == true { self?.sheet.update() }
+        }
         claude.start()
+        if claudeLinked { try? claude.writeScripts() }   // keep the hook scripts current after an update
+        if checkUsage { DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in self?.claude.checkUsage() } }
         if !defaults.bool(forKey: "loginConfigured") {
             defaults.set(true, forKey: "loginConfigured")
             setOpenAtLogin(true)
@@ -378,6 +385,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
         claude.prune()
         pushClaude()
         if ticks % 30 == 0 { updateBadge() }   // a usage window may have reset
+        if ticks % 300 == 0 && checkUsage { claude.checkUsage() }   // and every 5 minutes, fresh numbers
     }
 
     /// Which app you're in, calls, fullscreen, music, battery, dark mode. Sent only when something changes.
@@ -430,6 +438,12 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
     @objc func toggleFollowClaude() {
         defaults.set(!followClaude, forKey: "followClaude")
         js("mochi.setClaude(\(followClaude), \(narrateClaude))")
+    }
+
+    /// Opening the panel with numbers more than a minute old asks for new ones.
+    func freshenUsage() {
+        guard checkUsage, (claude.usageAt.map { Date().timeIntervalSince($0) > 60 } ?? true) else { return }
+        claude.checkUsage()
     }
 
     @objc func toggleNarrateClaude() {
@@ -775,6 +789,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
             if roamLevel >= 2 { nextRoam = min(nextRoam, CACurrentMediaTime() + 4) }
         case "menu":
             sheet.show(at: NSEvent.mouseLocation)
+            freshenUsage()
         case "save":
             if let s = body["data"] as? String { try? s.write(to: stateURL, atomically: true, encoding: .utf8) }
         case "stats":
@@ -863,6 +878,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
             sheet.close()
         } else {
             sheet.show(under: button)
+            freshenUsage()
         }
     }
 
@@ -901,6 +917,8 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
         p.bar = barMode.rawValue
         p.follow = followClaude
         p.narrate = narrateClaude
+        p.checkUsage = checkUsage
+        p.canCheck = ClaudeCode.binary != nil
         p.connected = claudeLinked
         p.listening = claude.listening
         p.five = claude.current(claude.fiveHour)
@@ -928,6 +946,10 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
         case .connect: connectClaude()
         case .follow: toggleFollowClaude()
         case .narrate: toggleNarrateClaude()
+        case .checkUsage:
+            defaults.set(!checkUsage, forKey: "checkUsage")
+            if checkUsage { claude.checkUsage() }
+        case .refreshUsage: claude.checkUsage()
         case .bar(let raw): setBarMode(raw)
         case .focus(let id): sheet.close(); claude.focus(claude.sessions[id])
         case .quit: NSApp.terminate(nil)

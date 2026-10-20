@@ -166,6 +166,7 @@ final class ClaudeCode {
         let event = e["hook_event_name"] as? String ?? ""
         let id = e["session_id"] as? String ?? "default"
         let now = Date().timeIntervalSince1970
+        if (e["cwd"] as? String) == dataDir.path { return }   // Mochi's own usage check (older hook scripts don't skip it)
         if event == "SessionEnd" { sessions[id] = nil; return changed() }
         var s = sessions[id] ?? ClaudeSession(id: id)
         s.last = now
@@ -238,17 +239,21 @@ final class ClaudeCode {
             // each update is the whole picture: a window it leaves out has reset, so don't keep an old number for it
             fiveHour = Self.window(r["five_hour"])
             weekly = Self.window(r["seven_day"])
-            usageAt = Date()
-            var saved: [String: Any] = ["at": usageAt!.timeIntervalSince1970]
-            if let w = fiveHour { saved["five"] = ["used_percentage": w.pct, "resets_at": w.resets?.timeIntervalSince1970 ?? 0] }
-            if let w = weekly { saved["seven"] = ["used_percentage": w.pct, "resets_at": w.resets?.timeIntervalSince1970 ?? 0] }
-            defaults.set(saved, forKey: "claudeUsage")
+            saveUsage()
         }
         if let id = j["session_id"] as? String, var s = sessions[id] {
             s.ctx = (j["context_window"] as? [String: Any])?["used_percentage"] as? Double
             sessions[id] = s
         }
         changed()
+    }
+
+    private func saveUsage() {
+        usageAt = Date()
+        var saved: [String: Any] = ["at": usageAt!.timeIntervalSince1970]
+        if let w = fiveHour { saved["five"] = ["used_percentage": w.pct, "resets_at": w.resets?.timeIntervalSince1970 ?? 0] }
+        if let w = weekly { saved["seven"] = ["used_percentage": w.pct, "resets_at": w.resets?.timeIntervalSince1970 ?? 0] }
+        defaults.set(saved, forKey: "claudeUsage")
     }
 
     static func window(_ any: Any?) -> UsageWindow? {
@@ -265,6 +270,123 @@ final class ClaudeCode {
     }
 
     private func changed() { onChange?() }
+
+    // MARK: checking usage on a timer
+    //
+    // The status line only reports usage while you're using Claude Code. In between, Mochi asks Claude Code itself:
+    // it runs `claude /usage` out of sight (`script` gives it the terminal it needs), reads the screen, and quits it.
+    // That's what AI Usage does too. It's a local command: it doesn't send a prompt or use up any of your plan.
+
+    private var checking: Process?
+    var checkedAt: Date?
+
+    /// Where Claude Code is installed. Apps don't get your shell's PATH, so look in the usual places.
+    static let binary: String? = {
+        let home = NSHomeDirectory()
+        return ["\(home)/.local/bin/claude", "/opt/homebrew/bin/claude", "/usr/local/bin/claude", "\(home)/.claude/local/claude",
+                "\(home)/.npm-global/bin/claude", "\(home)/.bun/bin/claude", "/usr/bin/claude"]
+            .first { FileManager.default.isExecutableFile(atPath: $0) }
+    }()
+
+    func checkUsage() {
+        guard checking == nil, let claude = Self.binary else { return }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/script")
+        p.arguments = ["-q", "/dev/null", "/bin/sh", "-c", "stty cols 120 rows 50; exec \"$0\" /usage", claude]
+        p.currentDirectoryURL = dataDir
+        var env = ProcessInfo.processInfo.environment.filter { !$0.key.hasPrefix("CLAUDE_CODE_") }
+        env["TERM"] = "xterm-256color"
+        env["MOCHI_USAGE_CHECK"] = "1"
+        p.environment = env
+        let input = Pipe(), output = Pipe()
+        p.standardInput = input
+        p.standardOutput = output
+        p.standardError = output
+        var screen = Data()
+        var lastByte = Date(), answered = false
+        let started = Date()
+        output.fileHandleForReading.readabilityHandler = { h in
+            let d = h.availableData
+            DispatchQueue.main.async { if !d.isEmpty { screen.append(d); lastByte = Date() } }
+        }
+        do { try p.run() } catch { return }
+        checking = p
+        // done once the usage screen has drawn and gone quiet; never more than 20 seconds
+        Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] t in
+            let text = Self.plain(screen)
+            if !answered, text.localizedCaseInsensitiveContains("trustthisfolder") || text.localizedCaseInsensitiveContains("safety") {
+                answered = true   // first run in Mochi's folder: Claude asks whether to trust it
+                input.fileHandleForWriting.write(Data("\r".utf8))
+            }
+            let drawn = text.contains("Currentweek") && text.range(of: #"Currentweek[^%]*?\d+%used"#, options: .regularExpression) != nil
+            let timedOut = Date().timeIntervalSince(started) > 20
+            guard (drawn && Date().timeIntervalSince(lastByte) > 0.8) || timedOut || !p.isRunning else { return }
+            t.invalidate()
+            output.fileHandleForReading.readabilityHandler = nil
+            if p.isRunning { p.terminate() }   // closing the terminal hangs up on Claude Code, which quits
+            self?.checking = nil
+            self?.checkedAt = Date()
+            if drawn { self?.read(text) }
+        }
+    }
+
+    /// The screen as plain text: escape codes and all whitespace gone (the TUI places words with cursor moves, not spaces).
+    static func plain(_ d: Data) -> String {
+        String(decoding: d, as: UTF8.self)
+            .replacingOccurrences(of: #"\x{1B}\][^\x{07}\x{1B}]*(\x{07}|\x{1B}\\)"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\x{1B}\[[0-9;?<>=]*[ -/]*[@-~]"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\x{1B}[()][0-9A-Za-z]|\x{1B}[=>78DEHMc]"#, with: "", options: .regularExpression)
+            .components(separatedBy: .whitespacesAndNewlines).joined()
+    }
+
+    /// "Current session … 60% used Resets 2:40pm (America/Los_Angeles)", and the same for the week. The screen is drawn
+    /// more than once, so the last one wins.
+    private func read(_ text: String) {
+        func last(_ pattern: String) -> [String]? {
+            guard let re = try? NSRegularExpression(pattern: pattern),
+                  let m = re.matches(in: text, range: NSRange(text.startIndex..., in: text)).last else { return nil }
+            return (0..<m.numberOfRanges).map { Range(m.range(at: $0), in: text).map { String(text[$0]) } ?? "" }
+        }
+        let gauge = #"[^%]*?(\d+)%used(?:Resets(.+?)\(([A-Za-z_/+-]+)\))?"#
+        guard let five = last("Currentsession" + gauge) else { return }
+        let week = last(#"Currentweek\(allmodels\)"# + gauge) ?? last("Currentweek" + gauge)
+        func window(_ g: [String]?) -> UsageWindow? {
+            guard let g, let pct = Double(g[1]) else { return nil }
+            return UsageWindow(pct: pct, resets: Self.resetDate(g[2], zone: g[3]))
+        }
+        fiveHour = window(five)
+        weekly = window(week)
+        saveUsage()
+        changed()
+    }
+
+    /// "2:40pm", "10pm" or "Oct22at10pm", in the time zone Claude Code names.
+    static func resetDate(_ s: String, zone: String) -> Date? {
+        guard !s.isEmpty, let m = s.range(of: #"(\d{1,2})(?::(\d{2}))?(am|pm)$"#, options: [.regularExpression, .caseInsensitive]) else { return nil }
+        let time = String(s[m]).lowercased()
+        let parts = time.dropLast(2).split(separator: ":")
+        guard var hour = Int(parts[0]) else { return nil }
+        let minute = parts.count > 1 ? Int(parts[1]) ?? 0 : 0
+        hour = hour % 12 + (time.hasSuffix("pm") ? 12 : 0)
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: zone) ?? .current
+        let now = Date()
+        var c = cal.dateComponents([.year, .month, .day], from: now)
+        c.hour = hour
+        c.minute = minute
+        let datePart = String(s[..<m.lowerBound])
+        if let d = datePart.range(of: #"^([A-Za-z]{3})(\d{1,2})"#, options: .regularExpression) {
+            let mon = String(datePart[d].prefix(3)), day = Int(datePart[d].dropFirst(3)) ?? 1
+            let months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"]
+            guard let mi = months.firstIndex(of: mon.lowercased()) else { return nil }
+            c.month = mi + 1
+            c.day = day
+            if let date = cal.date(from: c), date < now.addingTimeInterval(-86400) { c.year = (c.year ?? 0) + 1 }
+            return cal.date(from: c)
+        }
+        guard let today = cal.date(from: c) else { return nil }
+        return today < now ? cal.date(byAdding: .day, value: 1, to: today) : today
+    }
 
     /// Lets go of sessions that went quiet: a closed terminal never says goodbye.
     func prune() {
@@ -382,11 +504,12 @@ final class ClaudeCode {
         if !on { try? fm.removeItem(at: originalStatus) }
     }
 
-    private func writeScripts() throws {
+    func writeScripts() throws {
         let url = "http://127.0.0.1:\(Self.port)"
         let hook = """
         #!/bin/sh
         # Mochi's Claude Code hook: hands each event to Mochi, on this Mac only. Never slows down or fails Claude.
+        [ -n "$MOCHI_USAGE_CHECK" ] && exit 0   # Mochi itself checking your usage: nothing to act out
         curl -s -m 2 -o /dev/null -H 'X-Mochi: 1' -H "X-Claude-Pid: $PPID" -H 'Content-Type: application/json' --data-binary @- \(url)/hook 2>/dev/null
         exit 0
 

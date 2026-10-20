@@ -66,6 +66,8 @@ struct PanelState {
     var bar = "usage"
     var follow = true
     var narrate = true
+    var checkUsage = true
+    var canCheck = true
     var connected = false
     var listening = true
     var five: UsageWindow?
@@ -76,7 +78,7 @@ struct PanelState {
 
 enum PanelAction {
     case pet(String), size(Double), roam, appAware, emoji, quiet, login, corner, visible
-    case connect, follow, narrate, bar(String), focus(String), quit, close
+    case connect, follow, narrate, checkUsage, refreshUsage, bar(String), focus(String), quit, close
 }
 
 final class PanelModel: ObservableObject {
@@ -177,7 +179,7 @@ struct ClaudeTab: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if !s.connected && s.five == nil {
+            if !s.connected && s.five == nil && !(s.checkUsage && s.canCheck) {
                 EmptyState(title: "Mochi isn't connected to Claude Code yet.",
                            hint: "Connect it and Mochi acts out what Claude is doing, and your usage shows up here.",
                            action: ("Connect Claude Code", { model.act(.connect) }))
@@ -188,19 +190,35 @@ struct ClaudeTab: View {
                         if let w = s.week { UsageGauge(label: "Weekly", window: w) }
                     }
                     .padding(.top, 13)
-                    if let at = s.usageAt {
-                        Text("updated \(RelativeDateTimeFormatter().localizedString(for: at, relativeTo: Date()))")
-                            .font(.system(size: 10)).foregroundStyle(PanelTheme.muted).padding(.top, 9)
+                    HStack {
+                        if let at = s.usageAt {
+                            Text("updated \(RelativeDateTimeFormatter().localizedString(for: at, relativeTo: Date()))")
+                                .font(.system(size: 10)).foregroundStyle(PanelTheme.muted)
+                        }
+                        Spacer()
+                        if s.canCheck {
+                            Button { model.act(.refreshUsage) } label: {
+                                Image(systemName: "arrow.clockwise").font(.system(size: 10, weight: .medium)).foregroundStyle(PanelTheme.muted)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Check now")
+                        }
                     }
+                    .padding(.top, 9)
                 } else {
-                    Text("Your usage shows up here after your next Claude Code message.")
+                    Text(s.checkUsage && s.canCheck ? "Checking your usage…" : "Your usage shows up here after your next Claude Code message.")
                         .font(.system(size: 11)).foregroundStyle(PanelTheme.muted)
                         .fixedSize(horizontal: false, vertical: true).padding(.top, 13)
                 }
                 PanelSection(title: "Sessions") {
                     if s.sessions.isEmpty {
-                        Text(s.connected ? "No Claude Code sessions right now." : "Reconnect Claude Code to follow your sessions.")
-                            .font(.system(size: 11)).foregroundStyle(PanelTheme.muted)
+                        if s.connected {
+                            Text("No Claude Code sessions right now.").font(.system(size: 11)).foregroundStyle(PanelTheme.muted)
+                        } else {
+                            Row("Connect to follow your sessions") {
+                                Button("Connect") { model.act(.connect) }.buttonStyle(PillButtonStyle(tint: PanelTheme.mochi))
+                            }
+                        }
                     } else {
                         VStack(spacing: 0) {
                             ForEach(s.sessions) { session in
@@ -357,6 +375,7 @@ struct SettingsTab: View {
                     }
                     ToggleRow("Act out what Claude is doing", on: s.follow) { model.act(.follow) }
                     ToggleRow("Say what Claude is doing", on: s.narrate) { model.act(.narrate) }
+                    if s.canCheck { ToggleRow("Check usage every 5 minutes", on: s.checkUsage) { model.act(.checkUsage) } }
                 }
             }
             PanelSection(title: "Look") {
