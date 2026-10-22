@@ -31,6 +31,10 @@
     cross: ['c....c', 'cc..cc', '.cccc.', '.cccc.', 'cc..cc', 'c....c'],
     hand: ['.b.b.b.', '.b.b.b.', '.bbbbbb', 'bbbbbbb', '.bbbbb.', '..bbb..'],
     bang: ['RR', 'RR', 'RR', 'RR', '..', 'RR'],
+    gear: ['...kkk...', '.kkkqkkk.', '.kqqqqqk.', 'kkqqkqqkk', 'kqqk.kqqk', 'kkqqkqqkk', '.kqqqqqk.', '.kkkqkkk.', '...kkk...'],   // the cog Mochi holds
+    window: ['GGGGGGGG', 'GRGzGMGG', 'GwwwwwwG', 'GwwwwwwG', 'GwwwwwwG', 'GGGGGGGG'],
+    eye: ['..kkk..', '.kwwwk.', 'kwwkwwk', '.kwwwk.', '..kkk..'],
+    refresh: ['..GGG.G', '.G...GG', 'G...GGG', 'G......', 'G.....G', '.G...G.', '..GGG..'],
   };
 
   // which icon stands in for which emoji (anything not listed is dropped)

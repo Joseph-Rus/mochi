@@ -114,6 +114,8 @@
   // ---------- speech bubble ----------
   // emoji are off unless you turn them on: pixel icons stand in for them (icons.js)
   let emoji = ENV.emoji === true || params.get('emoji') === '1';
+  // water reminders can be turned off in Settings; logging water from the panel still works
+  let waterOn = ENV.water !== false;
   const bubble = {
     show(text, buttons, onChoose) {
       R.bubbleText = text;
@@ -309,9 +311,9 @@
       caffeine
         ? { pose: 'offerCoffee', say: 'you look sleepy too. get yourself a coffee? ☕', dur: 90, buttons: [['☕ getting one', 'yes'], ['not today', 'no']],
             onChoose: (c) => (c === 'yes' ? coffeeYes() : c === 'no' ? say('coffee', "fair! water then? i'll sip for both of us 💧", 6) : null) }
-        : { pose: 'water', say: 'grab some water too? 💧', dur: 90, buttons: [['💧 okay', 'yes'], ['later', 'no']],
+        : waterOn && { pose: 'water', say: 'grab some water too? 💧', dur: 90, buttons: [['💧 okay', 'yes'], ['later', 'no']],
             onChoose: (c) => (c === 'yes' ? waterYes() : snooze('water', 15)) },
-    ]);
+    ].filter(Boolean));
   }
 
   function onReturn(was) {
@@ -350,7 +352,7 @@
       return say('night', pick([`it's ${clock(t)}... the work will still be here tomorrow 🌙`, 'sleepy o\'clock. save your stuff and rest soon?', `${clock(t)}! your future self wants you asleep 💤`]), 10, 'z', { fxN: 2 });
     }
     if (S.sit >= CFG.walk && t >= (R.snooze.walk || 0)) return askWalk();
-    if (D.active - S.waterAt >= CFG.water && t >= (R.snooze.water || 0)) return askWater();
+    if (waterOn && D.active - S.waterAt >= CFG.water && t >= (R.snooze.water || 0)) return askWater();
     if (!F.patternCoffee && h >= 6 && h < 15 && caffeine() < 3 && coffeeHabitNow(m) && !recentCoffee(m)) {
       F.patternCoffee = 1;
       return ask('offerCoffee', 'you usually grab a coffee around now ☕ want one?', [['☕ yes please', 'yes'], ['skip today', 'no']], (c) => (c === 'yes' ? coffeeYes() : null));
@@ -367,7 +369,7 @@
       F.slump = 1;
       if (h < 15 && caffeine() < 3) return ask('energy', 'afternoon slump? coffee, energy drink, or a quick walk?', [['☕ coffee', 'coffee'], ['⚡ energy', 'energy'], ['🚶 walk', 'walk']],
         (c) => (c === 'coffee' ? coffeeYes() : c === 'energy' ? energyYes() : c === 'walk' ? startWalk() : null));
-      return ask('water', "afternoon slump? it's late for caffeine, so you sleep okay. water + a stretch? 💧", [['💧 okay', 'yes'], ['nah', 'no']], (c) => (c === 'yes' ? waterYes() : null));
+      if (waterOn) return ask('water', "afternoon slump? it's late for caffeine, so you sleep okay. water + a stretch? 💧", [['💧 okay', 'yes'], ['nah', 'no']], (c) => (c === 'yes' ? waterYes() : null));
     }
     const ue = usualEnd();
     if (!F.wrap && ue != null && m >= ue - 15 && m <= ue + 30 && D.active > 2 * CFG.hour) {
@@ -477,6 +479,7 @@
     else if (t < R.landUntil) p = 'land';
     else if (t < R.dizzyUntil) p = 'dizzy';
     else if (R.scene) return;
+    else if (R.menu) p = 'tinker';                           // its panel is open
     else if (R.sys.call) p = 'shh';
     else if (cp) p = cp;                                     // acting out what Claude Code is doing
     else if (s.idle >= CFG.sleepIdle) p = isNight(t) ? 'nightSleep' : 'nap';
@@ -643,7 +646,7 @@
   const MOODS = {
     wizard: 'casting code spells', detective: 'investigating', chef: 'cooking lunch', nap: 'napping under a book', tv: 'turned into a screen',
     energy: 'holding an energy drink', sipEnergy: 'drinking an energy drink',
-    idle: 'chilling', content: 'happy', tired: 'sleepy', yawn: 'yawning', sip: 'sipping coffee', coffee: 'having coffee',
+    idle: 'chilling', tinker: 'at your service', content: 'happy', tired: 'sleepy', yawn: 'yawning', sip: 'sipping coffee', coffee: 'having coffee',
     offerCoffee: 'offering you coffee', water: 'wants you to drink water', sipWater: 'drinking water', walkAsk: 'wants to go for a walk',
     walk: 'out for a walk', stretch: 'stretching', lookfar: 'resting its eyes', cheer: 'cheering you on', wave: 'waving',
     type: 'typing along with you', focus: 'in the zone with you', read: 'reading', juggle: 'playing ball', plant: 'watering its plant',
@@ -662,6 +665,7 @@
       type: 'stats',
       mood: MOODS[view.current] || 'chilling',
       quiet: quiet(),
+      wearing: R.scene && COSTUMES[R.scene.pose] ? R.scene.pose : '',   // for the panel's Costumes tab
       stats: { active: fmt(S.day.active), sitting: fmt(S.sit), water: S.day.water, coffee: S.day.coffee, energy: S.day.energy || 0, breaks: S.day.breaks, walks: S.day.walks },
     });
   }
@@ -768,6 +772,18 @@
       if (ok) say('cheer', "connected! restart your claude code sessions and i'll follow along :sparkle:", 8, 'sparkle');
       else say('sweaty', `couldn't connect to claude code: ${why}`, 8);
     },
+    // the panel opened or closed: hold up a gear while it's open, and keep the bubble out of its way
+    menu(open) {
+      R.menu = !!open;
+      document.body.classList.toggle('menu', R.menu);
+      R.ambient = '';
+      ambient(Date.now(), R.last || IDLE);
+    },
+    setWater(on) {
+      waterOn = !!on;
+      R.now = Date.now();
+      if (!waterOn && R.scene && R.scene.pose === 'water') endScene();   // stop asking right away
+    },
     setEmoji(on) {
       emoji = !!on;
       if (!bubbleEl.hidden && R.bubbleText != null) {   // redraw what's showing
@@ -779,7 +795,12 @@
     setScale(s, w, h) { layout.w = w; layout.h = h; view.setScale(s); applyLayout(); placeBubble(); },
     action(name) {
       R.now = Date.now();
-      if (name.startsWith('wear:')) { const c = name.slice(5); if (COSTUMES[c]) play({ pose: c, say: COSTUMES[c], sayFor: 3, dur: 40 }); return; }
+      if (name.startsWith('wear:')) {
+        const c = name.slice(5);
+        if (COSTUMES[c]) play({ pose: c, say: COSTUMES[c], sayFor: 3, dur: 40 });
+        else if (c === 'none' && R.scene && COSTUMES[R.scene.pose]) endScene();   // take it off
+        return postStats();
+      }
       if (ACTIONS[name]) ACTIONS[name]();
       save();
     },
@@ -801,7 +822,7 @@
   // Clickable areas, so the rest of the window lets clicks through to whatever is behind it.
   function hotRects() {
     const out = [view.hitBox()];
-    if (!bubbleEl.hidden) { const b = bubbleEl.getBoundingClientRect(); out.push([b.left - 4, b.top - 4, b.width + 8, b.height + 14]); }
+    if (!bubbleEl.hidden && !R.menu) { const b = bubbleEl.getBoundingClientRect(); out.push([b.left - 4, b.top - 4, b.width + 8, b.height + 14]); }
     return out.map((a) => a.map(Math.round));
   }
   setInterval(() => { const h = JSON.stringify(hotRects()); if (h !== R.hotStr) { R.hotStr = h; post({ type: 'hot', rects: JSON.parse(h) }); } }, 150);
