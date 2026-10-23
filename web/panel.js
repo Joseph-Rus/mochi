@@ -24,7 +24,7 @@
 
 
   const TABS = [['claude', 'usage'], ['today', 'today'], ['play', 'play'], ['closet', 'dress up'], ['settings', ':gear:']];
-  const COSTUMES = [['idle', 'mochi'], ['wizard', 'wizard'], ['detective', 'sleuth'], ['chef', 'chef'],
+  const COSTUMES = [['idle', 'plain'], ['wizard', 'wizard'], ['detective', 'sleuth'], ['chef', 'chef'],
     ['focus', 'dj'], ['shades', 'shades'], ['tv', 'tv'], ['party', 'party']];
 
   let S = {}, tab = 'claude', drawn = '';
@@ -71,13 +71,12 @@
       return [
         h('h2', {}, 'today'),
         h('div', { class: 'stats' }, stat(st.active, 'at the computer'), stat(st.sitting, 'sitting for'), stat(st.breaks ?? 0, 'breaks'),
-          stat(st.water ?? 0, 'water'), stat(st.coffee ?? 0, 'coffee'), stat(st.energy ?? 0, 'energy drinks')),
+          stat(st.walks ?? 0, 'walks'), stat(st.coffee ?? 0, 'coffee'), stat(st.energy ?? 0, 'energy drinks')),
         h('h2', {}, 'i just had...'),
         h('div', { class: 'btns two' },
-          say('button', { class: 'pxb', onclick: () => act('pet', 'water') }, ':drop: some water'),
           say('button', { class: 'pxb', onclick: () => act('pet', 'coffee') }, ':mug: a coffee'),
           say('button', { class: 'pxb', onclick: () => act('pet', 'energy') }, ':bolt: an energy drink'),
-          say('button', { class: 'pxb', onclick: () => act('pet', 'walk') }, ':shoe: going for a walk')),
+          say('button', { class: 'pxb wide', onclick: () => act('pet', 'walk') }, ':shoe: going for a walk')),
       ];
     },
 
@@ -91,9 +90,12 @@
     },
 
     closet() {
-      const wearing = S.wearing || 'idle';
+      const who = S.character || 'mochi', wearing = S.wearing || 'idle';
+      if (who !== dressed) { dressed = who; outfits.forEach((v) => v.setCharacter(who)); }   // the outfits, on whoever you picked
+      [friends, movieFriends].forEach((g) => g.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.id === who)));
       closet.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.id === wearing));
-      return [h('h2', {}, 'dress up', h('span', { class: 'end small' }, 'worn for a little while')), closet];
+      return [h('h2', {}, 'who lives here'), friends, h('h2', {}, 'from the movies'), movieFriends,
+        h('h2', {}, 'dress up', h('span', { class: 'end small' }, 'worn for a little while')), closet];
     },
 
     settings() {
@@ -108,10 +110,13 @@
         sw('react to apps & calls', S.appAware, 'appAware'),
         sw('use emoji', S.emoji, 'emoji'),
         sw('open at login', S.login, 'login'),
-        h('h2', {}, 'reminders'),
-        tg('drink water', 'waterReminders'),
-        tg('get up and walk', 'walkReminders'),
+        h('h2', {}, 'stand up'),
+        tg('remind me to get up and walk', 'walkReminders'),
         tg('stretches & eye breaks', 'stretchReminders'),
+        tg("nudge me if i don't go", 'walkNag'),
+        tg('sweat when i sit a long time', 'sitSweaty'),
+        tg('turn into a tv if i sit too long', 'sitTv'),
+        h('h2', {}, 'reminders'),
         tg('lunch', 'lunchReminders'),
         tg('coffee', 'coffeeReminders'),
         tg('bedtime', 'bedtimeReminders'),
@@ -135,10 +140,21 @@
   };
 
   // the closet is built once, so each little Mochi keeps animating instead of restarting every second
-  const closet = h('div', { class: 'closet' }, COSTUMES.map(([id, label]) => {
+  const tile = (id, label, opts, onclick) => {
     const stage = h('div', { class: 'stage' });
-    new Critter(stage, { pose: id, scale: 1.5 });
-    return h('button', { 'data-id': id, title: label, onclick: () => act('pet', id === 'idle' || id === S.wearing ? 'wear:none' : 'wear:' + id) }, stage, h('span', {}, label));
+    const view = new Critter(stage, Object.assign({ scale: 1.5 }, opts));
+    return [h('button', { 'data-id': id, title: label, onclick }, stage, h('span', {}, label)), view];
+  };
+  // who lives on your screen: each character, and the ones from the movies
+  const pickable = (movie) => Critter.CHARACTERS.filter((c) => c[2] === movie).map(([id, label]) => tile(id, label, { character: id }, () => act('character', id))[0]);
+  const friends = h('div', { class: 'closet' }, pickable(false));
+  const movieFriends = h('div', { class: 'closet' }, pickable(true));
+  const outfits = [];
+  let dressed = 'mochi';
+  const closet = h('div', { class: 'closet' }, COSTUMES.map(([id, label]) => {
+    const [b, view] = tile(id, label, { pose: id }, () => act('pet', id === 'idle' || id === S.wearing ? 'wear:none' : 'wear:' + id));
+    outfits.push(view);
+    return b;
   }));
 
   // ---------- drawing ----------
@@ -158,7 +174,7 @@
       return b;
     }));
     $('body').replaceChildren(...[(VIEWS[tab] || VIEWS.claude)()].flat().filter(Boolean));
-    $('body').classList.toggle('scroll', tab === 'settings');
+    $('body').classList.toggle('scroll', tab === 'settings' || tab === 'closet');
   }
 
   $('eye').addEventListener('click', () => act('visible'));
@@ -191,7 +207,7 @@
     panel.show({
       tab: params.get('tab') || 'claude', mood: 'at your service', visible: true, wearing: 'wizard', emoji: false, connected: true, listening: true, canCheck: true,
       checkUsage: true, five: { pct: 21, resets: '9:20 PM' }, week: { pct: 74, resets: 'Sun 12:00 PM' }, updated: 'updated 2 min ago',
-      stats: { active: '3h 12m', sitting: '41m', water: 3, coffee: 1, energy: 0, breaks: 2 }, roam: true, appAware: true, quiet: false, login: true,
+      stats: { active: '3h 12m', sitting: '41m', walks: 1, coffee: 1, energy: 0, breaks: 2 }, character: 'cat', roam: true, appAware: true, quiet: false, login: true,
       toggles: { lunchReminders: false }, sessions: [{ id: 'a', project: 'mochi', line: 'editing panel.js', busy: true },
         { id: 'b', project: 'parallax', line: 'needs your OK to use Bash', needsYou: true }, { id: 'c', project: 'dotfiles', line: 'idle' }],
       scale: 3, follow: true, narrate: true, version: '1.1', port: 47833,

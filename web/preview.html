@@ -19,13 +19,13 @@
 <script src="pet.js"></script>
 <script>
   const q = new URLSearchParams(location.search);
-  const only = q.get('only'), scale = +(q.get('scale') || 5);
+  const only = q.get('only'), scale = +(q.get('scale') || 5), character = q.get('character');
   const views = [];
   for (const p of (only ? only.split(',') : Critter.POSES)) {
     const c = document.createElement('div'); c.className = 'cell';
     const m = document.createElement('div'); const label = document.createElement('div'); label.textContent = p;
     c.append(m, label); grid.append(c);
-    views.push(new Critter(m, { pose: p, scale }));
+    views.push(new Critter(m, { pose: p, scale, character }));
   }
   addEventListener('pointermove', (e) => views.forEach((v) => v.lookAtPoint(e.clientX, e.clientY)));
 </script>

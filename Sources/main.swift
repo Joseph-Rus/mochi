@@ -191,8 +191,9 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
     var roam: Bool { defaults.object(forKey: "roam") as? Bool ?? true }
     var appAware: Bool { defaults.object(forKey: "appAware") as? Bool ?? true }
     var emoji: Bool { defaults.bool(forKey: "emoji") }   // off: pixel icons in the bubble
+    var character: String { defaults.string(forKey: "character") ?? "mochi" }   // who lives on your screen (CHARACTERS in pet.js)
     /// Reminders, Claude Code nudges and the session list, each turned off on its own in the panel; all on to start. brain.js reads them too.
-    static let toggles = ["waterReminders", "walkReminders", "stretchReminders", "lunchReminders", "coffeeReminders",
+    static let toggles = ["walkReminders", "stretchReminders", "walkNag", "sitSweaty", "sitTv", "lunchReminders", "coffeeReminders",
                           "bedtimeReminders", "cheers", "claudeDone", "claudeFetch", "showSessions"]
     func isOn(_ key: String) -> Bool { defaults.object(forKey: key) as? Bool ?? true }
     var toggles: [String: Bool] { Dictionary(uniqueKeysWithValues: App.toggles.map { ($0, isOn($0)) }) }
@@ -256,7 +257,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
         }
         var env: [String: Any] = ["app": true, "boot": bootTime() * 1000, "launched": Date().timeIntervalSince1970 * 1000,
                                   "scale": scale, "w": size.width, "h": size.height, "below": App.below, "emoji": emoji,
-                                  "toggles": toggles, "claude": followClaude, "narrate": narrateClaude]
+                                  "character": character, "toggles": toggles, "claude": followClaude, "narrate": narrateClaude]
         if let speed = ProcessInfo.processInfo.environment["MOCHI_SPEED"], let v = Double(speed) { env["speed"] = v }
         if ProcessInfo.processInfo.environment["MOCHI_TRACE"] != nil { env["trace"] = true }
         let boot = "window.MOCHI_SAVED = \(saved); window.MOCHI_ENV = \(json(env));"
@@ -847,7 +848,7 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
             updated = Date().timeIntervalSince(at) < 60 ? "updated just now" : "updated " + f.localizedString(for: at, relativeTo: Date())
         }
         return [
-            "tab": defaults.string(forKey: "panelTab") ?? "claude", "mood": mood, "stats": stats, "wearing": wearing,
+            "tab": defaults.string(forKey: "panelTab") ?? "claude", "mood": mood, "stats": stats, "wearing": wearing, "character": character,
             "visible": panel.isVisible, "quiet": quiet, "roam": roam, "appAware": appAware, "emoji": emoji, "toggles": toggles,
             "login": SMAppService.mainApp.status == .enabled, "scale": Double(scale),
             "follow": followClaude, "narrate": narrateClaude, "checkUsage": checkUsage, "canCheck": ClaudeCode.binary != nil,
@@ -867,6 +868,10 @@ final class App: NSObject, NSApplicationDelegate, WKScriptMessageHandler, WKNavi
         case .roam: toggleRoam()
         case .appAware: toggleAppAware()
         case .emoji: toggleEmoji()
+        case .character(let id):
+            guard !id.isEmpty, id.allSatisfy({ $0.isASCII && $0.isLetter }) else { break }   // it goes into a line of JavaScript
+            defaults.set(id, forKey: "character")
+            js("mochi.setCharacter('\(id)')")
         case .toggle(let key):
             guard App.toggles.contains(key) else { break }
             defaults.set(!isOn(key), forKey: key)
