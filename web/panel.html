@@ -58,6 +58,7 @@
   .btns { display: grid; gap: 10px 10px; padding: 2px 2px 4px; }
   .btns.two { grid-template-columns: 1fr 1fr; }
   .btns.four { grid-template-columns: repeat(4, 1fr); }
+  .btns .wide { grid-column: 1 / -1; }
   .card .pxb { display: flex; align-items: center; justify-content: center; gap: 5px; padding: 4px 6px 5px; font-size: 16px; line-height: 1; text-align: center;
     background: #f3e9dd; box-shadow: 0 -2px 0 0 var(--ink), 0 2px 0 0 var(--ink), -2px 0 0 0 var(--ink), 2px 0 0 0 var(--ink), 0 4px 0 0 var(--shade); }
   .card .pxb.left { justify-content: flex-start; }
@@ -67,7 +68,7 @@
   .card .pxb:active { transform: translateY(2px); box-shadow: 0 -2px 0 0 var(--ink), 0 2px 0 0 var(--ink), -2px 0 0 0 var(--ink), 2px 0 0 0 var(--ink); }
   .card .pxb .px-icon { margin: 0; }
 
-  /* dress up: Mochi itself, live, in each costume */
+  /* dress up: each character, live, then the one you picked in each costume */
   .closet { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
   .closet button { display: flex; flex-direction: column; align-items: center; padding: 2px 0 5px; background: var(--soft); }
   .closet button:hover { background: #efe2d4; }

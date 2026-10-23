@@ -17,6 +17,7 @@
     z: '#FFD54A', Z: '#F2A93B', O: '#FFF6C8',                                              // gold, glow
     x: '#FF4F6E', i: '#FF5C7C', h: '#7A5233', H: '#54381F', F: '#F2C27A', f: '#D99A4E',    // misc
     E: '#D3C7A3', Q: '#A99B76', J: '#1F4D3E', I: '#C8E86B',                                // tv
+    1: '#EE8A3C', 2: '#A9C9F8', 3: '#4B4B56',                                              // characters: beak, stitch's eyes, vader's mask
   };
 
   const sp = (rows) => ({ rows, w: rows[0].length, h: rows.length });
@@ -170,6 +171,67 @@
     '.QQQQQQQQQQQQQQ.',
   ]);
 
+  // ---------- characters: who lives on your screen ----------
+  // Each one recolors the critter (b, l, s, p) and adds its own bits, each [rows, x, y, mirrored] (or a list of them):
+  //   ears: on its head, from the body's left edge and top (mirrored at the right edge); hidden under hats and headphones
+  //   tail: behind the body, from its right edge
+  //   wear: on the body, placed like ears (a belly, goggles, overalls)
+  //   face: under the eyes, snout: over the mouth; both from the eyes' center like EYES, and they follow its gaze
+  // arms, legs: other colors for those (legs: [leg, foot], or false); eyes: recolors the eyes; eyeShapes: its own EYES; mouth: its resting mouth;
+  // head: a whole head of its own, drawn over the body in place of its face (a helmet); tall: how far its ears or head reach
+  // above the body (signs and hats float that much higher); hem: a wavy bottom; movie: from a movie
+  const bit = (rows, x, y, m = false) => ({ s: sp(rows), x, y, m });
+  const CHARACTERS = {
+    mochi: { name: 'mochi' },
+    cat: { name: 'kitty', skin: { b: '#A4A9BA', l: '#BDC1CF', s: '#858B9D' },
+      ears: bit(['b..', 'bb.', 'bpb'], 1, -3, true), tail: bit(['....l', '....b', '....b', '.bbb.'], -1, 5), snout: bit(['ii'], -1, 5) },
+    bunny: { name: 'bunny', skin: { b: '#F4B6C6', l: '#F9CCD8', s: '#DC93A8', p: '#EA7895' }, tall: 3,
+      ears: bit(['.l.', 'bpb', 'bpb', 'bpb', 'bpb'], 2, -5, true) },
+    frog: { name: 'froggy', skin: { b: '#7CC46A', l: '#98D886', s: '#5DA350' },
+      ears: bit(['.ll.', 'bbbb'], 2, -2, true), mouth: [['e....e', '.eeee.'], -3, 6] },
+    panda: { name: 'panda', skin: { b: '#F5F2ED', l: '#FFFFFF', s: '#D8D1C7' }, arms: 'k', legs: ['k', 'K'], eyes: { e: 'w', w: 'e' },
+      ears: bit(['.kk', 'kkk'], 0, -2, true), face: bit(['.kk.', 'kkkk', 'kkkk', '.kk.'], -5, 2, true), snout: bit(['kk'], -1, 5) },
+    bear: { name: 'bear', skin: { b: '#AE7A53', l: '#C38F69', s: '#8C5D3D' },
+      ears: bit(['bbb', 'btb'], 1, -2, true), face: bit(['.tt.', 'tttt', '.tt.'], -2, 5), snout: bit(['ee'], -1, 5) },
+    chick: { name: 'chick', skin: { b: '#FFD85A', l: '#FFE68C', s: '#EDB73A' }, legs: ['1', '1'],
+      ears: bit(['.l.l', '..l.'], 5, -2), snout: bit(['1111', '.11.'], -2, 5) },
+    ghost: { name: 'ghost', skin: { b: '#EEF0FA', l: '#FFFFFF', s: '#BCC0DE' }, legs: false, hem: true },
+    // from the movies
+    totoro: { name: 'totoro', movie: true, skin: { b: '#8E9099', l: '#A3A5AD', s: '#73757E' }, tall: 1,
+      ears: bit(['.b', 'bb', 'bb'], 2, -3, true), wear: bit(['..CCCC', '.CsCsC', 'CCCCCC', '.CCCCC'], 1, 6, true) },
+    stitch: { name: 'stitch', movie: true, skin: { b: '#5A8CE8', l: '#79A5F0', s: '#406FC8', p: '#E58FB2' },
+      ears: bit(['b....', 'bpb..', '.bpbb'], -2, -3, true), face: bit(['.22.', '2222', '2222', '.22.'], -5, 2, true), snout: bit(['yy'], -1, 5) },
+    minion: { name: 'minion', movie: true, skin: { b: '#FFD93B', l: '#FFE46F', s: '#E9BA1F' }, legs: ['U', 'k'], mouth: [['e..e', '.ee.'], -2, 6],
+      wear: [bit(['kk'], 0, 3, true), bit(['.ggg.', 'gwwwg', 'gwwwg', 'gwwwg', '.ggg.'], 2, 1, true), bit(['uuuuuuu', 'uuuuuuu', '.UUUUUU'], 0, 7, true)] },
+    baymax: { name: 'baymax', movie: true, skin: { b: '#F4F4F6', l: '#FFFFFF', s: '#CFCFD8' },
+      eyeShapes: { open: [['.e.', 'eee', '.e.'], -5, 2], blink: [['eee'], -5, 3] }, snout: bit(['eeee'], -2, 3) },
+    shrek: { name: 'shrek', movie: true, skin: { b: '#94B83F', l: '#A9CB57', s: '#779A2E' }, legs: ['n', 'N'],
+      ears: bit(['b..', 'bb.', '.bb'], -1, -2, true), wear: bit(['hhPPPPP', 'hhhPPPP', '.hhPPPP'], 0, 7, true) },
+    olaf: { name: 'olaf', movie: true, skin: { b: '#FAFBFD', l: '#FFFFFF', s: '#D3DCE8' }, arms: 'h', mouth: [['e....e', '.eeee.'], -3, 6],
+      ears: bit(['h.h.h', '.hhh.'], 4, -2), snout: bit(['1111'], -1, 5) },
+    soot: { name: 'soot sprite', movie: true, skin: { b: '#2E2D33', l: '#3D3C44', s: '#1E1D22' }, legs: ['k', 'k'], eyes: { e: 'w', w: 'e' },
+      ears: bit(['.k..k.'], 1, -1, true), hem: true },
+    yoda: { name: 'yoda', movie: true, skin: { b: '#9DB46E', l: '#B1C585', s: '#7F9654' },
+      ears: bit(['bb....', '.bpbb.', '...bbb'], -5, -1, true), wear: bit(['EEEEEEE', 'QEEEEEE', '.QEEEEE'], 0, 7, true) },
+    vader: { name: 'vader', movie: true, skin: { b: '#26252B', l: '#33333B', s: '#17171B' }, legs: ['b', 'K'], tall: 4, head: sp([
+      '......kkkkkk......',
+      '....kkkkkkkkkk....',
+      '...kkGGkkkkkkkk...',
+      '..kkGkkkkkkkkkkk..',
+      '..kKKKKKKKKKKKKk..',
+      '..kk3333333333kk..',
+      '..k3KK333333KK3k..',
+      '..k3KKK3333KKK3k..',
+      '.kk33KK3GG3KK33kk.',
+      '.kk33333GG33333kk.',
+      'kkk333gGggGg333kkk',
+      'Kkkk333gGGg333kkkK',
+      'KKkkk333gg333kkkKK',
+      '.KKKKKK3333KKKKKK.',
+    ]) },
+  };
+  const COVERS_EARS = ['headphones', 'napbook', 'tv'];
+
   // ---------- particles ----------
   const FX = {
     z: { sprites: [sp(['jjjj', '..j.', '.j..', 'jjjj']), sp(['jjj', '..j', 'j..', 'jjj'])], life: 30 },
@@ -199,7 +261,6 @@
     offerCoffee: { eyes: 'wide', held: 'mug', armL: 'hold', anim: 'offer' },
     energy:      { eyes: 'wide', held: 'can', armL: 'hold', anim: 'offer' },
     sipEnergy:   { held: 'can', armL: 'hold', anim: 'sip', fx: ['sparkle', 14] },
-    water:       { eyes: 'wide', held: 'glass', armL: 'hold', anim: 'offer' },
     sipWater:    { held: 'glass', armL: 'hold', anim: 'sip', blush: true },
     walkAsk:     { eyes: 'wide', legs: 'sneakers', acc: ['headband'], anim: 'wave' },
     walk:        { eyes: 'happy', legs: 'sneakers', acc: ['headband'], anim: 'walk' },
@@ -435,6 +496,7 @@
       this.facing = 1;
       this.current = null;
       this._size();
+      this.setCharacter(opts.character);
       this.pose(opts.pose || 'idle');
       if (opts.blink !== false) this._blinkLoop();
       all.add(this);
@@ -452,6 +514,15 @@
     }
 
     setScale(s) { this.scale = s; this._size(); this._step(frame, true); }
+    // who it is: a key of CHARACTERS (anything else is Mochi)
+    setCharacter(name) {
+      this.character = CHARACTERS[name] ? name : 'mochi';
+      this.ch = CHARACTERS[this.character];
+      this.skin = this.ch.skin || {};
+      this.el.dataset.character = this.character;
+      this._step(frame, true);
+      return this;
+    }
 
     pose(name) {
       if (this.current === name) return this;
@@ -518,7 +589,7 @@
 
     // ---------- drawing ----------
     _px(x, y, c) {
-      const col = PAL[c] || c;
+      const col = this.skin[c] || PAL[c] || c;
       if (!col || x < 0 || y < 0 || x >= CW || y >= CH) return;
       this.b.fillStyle = col;
       this.b.fillRect(x | 0, y | 0, 1, 1);
@@ -533,12 +604,19 @@
         }
       }
     }
-    _glyph(g, cx, top, ex, ey, mirror = true) {
+    _glyph(g, cx, top, ex, ey, mirror = true, map) {
       if (!g) return;
       const [rows, ox, oy] = g;
       const s = sp(rows);
-      this._spr(s, cx + ox + ex, top + oy + ey);
-      if (mirror) this._spr(s, cx + (-ox - s.w) + ex, top + oy + ey, true);
+      this._spr(s, cx + ox + ex, top + oy + ey, false, map);
+      if (mirror) this._spr(s, cx + (-ox - s.w) + ex, top + oy + ey, true, map);
+    }
+    // one of a character's bits, placed from `left` (and mirrored from `right`)
+    _bit(b, left, right, top) {
+      if (!b) return;
+      if (Array.isArray(b)) return b.forEach((x) => this._bit(x, left, right, top));
+      this._spr(b.s, left + b.x, top + b.y);
+      if (b.m) this._spr(b.s, right - b.x - b.s.w, top + b.y, true);
     }
 
     _step(f, force) {
@@ -586,27 +664,40 @@
         this._spr(PLANT, 1, 25);
         if (st.grow) this._px(4, 24, 'L');
       }
-      // shadow
-      const sw = Math.round((oy < -3 ? 8 : 12) * st.shadow);
+      const ch = this.ch;
+      // shadow (smaller under a wavy hem: a ghost floats)
+      const sw = Math.round((oy < -3 || ch.hem ? 8 : 12) * st.shadow);
       for (let i = 0; i < sw; i++) this._px(BX + ox + 1 + (12 - sw) / 2 + i, BY + BH + 2, 'rgba(60,30,20,0.16)');
       // legs
-      LEGS.forEach((lx0, i) => {
+      const [leg, foot] = ch.legs || ['b', 's'];
+      if (ch.legs !== false) LEGS.forEach((lx0, i) => {
         const lx = bw < BW ? Math.round(body.dx + (lx0 * (bw - 1)) / (BW - 1)) : lx0;   // tucked in under a narrow body
         const x = BX + ox + lx, y0 = BY + oy + BH - 1 - st.legLift[i];
         const shoes = P.legs === 'sneakers';
-        this._px(x, y0, 'b');
-        this._px(x, y0 + 1, 'b');
-        this._px(x, y0 + 2, shoes ? 'w' : 's');
+        this._px(x, y0, leg);
+        this._px(x, y0 + 1, leg);
+        this._px(x, y0 + 2, shoes ? 'w' : foot);
       });
+      // its ears and tail, behind the body (not mid-spin, when it's too thin for them)
+      const ears = ch.ears && bw >= 10 && !P.hat && !P.acc.some((a) => COVERS_EARS.includes(a));
+      if (ears) this._bit(ch.ears, bx, bx + bw, top);
+      if (ch.tail && bw >= 10) this._bit(ch.tail, bx + bw, 0, top);
       // body
       this._spr(body.s, bx, top);
+      if (ch.hem) for (let x = 1; x < bw - 1; x++) if ((x + (f >> 2)) % 4 < 2) this._px(bx + x, top + bh, 's');
+      if (bw >= 10) this._bit(ch.wear, bx, bx + bw, top);
       const costume = P.acc.includes('tv');
-      if (!costume && st.eyes !== 'none') {   // 'none': we're looking at its back
-        if (P.blush) { this._px(Math.round(cx - 6), top + 5, 'p'); this._px(Math.round(cx - 5), top + 5, 'p'); this._px(Math.round(cx + 4), top + 5, 'p'); this._px(Math.round(cx + 5), top + 5, 'p'); }
+      const head = ch.head && !costume && bw >= 10;   // stays its size, sitting on the body's bottom edge
+      if (head) this._spr(ch.head, Math.round(bx + (bw - ch.head.w) / 2), top + bh - ch.head.h);
+      if (!costume && !head && st.eyes !== 'none') {   // 'none': we're looking at its back
         const eyeCx = Math.round(cx);
-        this._glyph(EYES[st.eyes] || EYES.open, eyeCx, top, ex, ey);
+        this._bit(ch.face, eyeCx + ex, eyeCx + ex, top + ey);
+        if (P.blush) { this._px(Math.round(cx - 6), top + 5, 'p'); this._px(Math.round(cx - 5), top + 5, 'p'); this._px(Math.round(cx + 4), top + 5, 'p'); this._px(Math.round(cx + 5), top + 5, 'p'); }
+        this._glyph((ch.eyeShapes || {})[st.eyes] || EYES[st.eyes] || EYES.open, eyeCx, top, ex, ey, true, ch.eyes);
         if (P.brows && BROWS[P.brows]) this._glyph(BROWS[P.brows], eyeCx, top, ex, Math.min(ey, 0));
-        if (st.mouth && MOUTHS[st.mouth]) this._glyph(MOUTHS[st.mouth], eyeCx, top, ex, ey, false);
+        const mouth = MOUTHS[st.mouth] || (st.mouth === 'none' && ch.mouth);
+        if (mouth) this._glyph(mouth, eyeCx, top, ex, ey, false);
+        this._bit(ch.snout, eyeCx + ex, eyeCx + ex, top + ey);
         if (P.acc.includes('shades')) {
           const y = top + 3;
           for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) { this._px(eyeCx - 5 + i, y + j, 'K'); this._px(eyeCx + 2 + i, y + j, 'K'); }
@@ -641,10 +732,11 @@
           this._px(bx + bw, top + y, 'Y'); this._px(bx + bw - 1, top + y, edge ? 'Y' : 'j');
         }
       }
-      if (P.acc.includes('napbook')) this._spr(NAPBOOK, bx - 1, top - 4);
-      if (P.hat && HATS[P.hat]) { const [s, hx, overlap] = HATS[P.hat]; this._spr(s, bx + hx + (bw - BW) / 2, top - s.h + overlap); }
+      const lift = (ears || head) && ch.tall || 0;
+      if (P.acc.includes('napbook')) this._spr(NAPBOOK, bx - 1, top - 4 - (head ? lift : 0));
+      if (P.hat && HATS[P.hat]) { const [s, hx, overlap] = HATS[P.hat]; this._spr(s, bx + hx + (bw - BW) / 2, top - s.h + overlap - (head ? lift : 0)); }
       // signs over the head
-      const sign = (s) => { const x = Math.round(bx + (bw - s.w) / 2), y = top - s.h - 2 - (f % 30 < 15 ? 0 : 1); this._spr(s, x, y); return [x, y]; };
+      const sign = (s) => { const x = Math.round(bx + (bw - s.w) / 2), y = top - s.h - 2 - lift - (f % 30 < 15 ? 0 : 1); this._spr(s, x, y); return [x, y]; };
       if (P.acc.includes('mute')) sign(MUTE);
       if (P.acc.includes('alert')) sign(ALERT);
       if (P.acc.includes('dots')) {   // ... thinking
@@ -719,9 +811,9 @@
         const a = ARMS[name];
         if (!a) return;
         const [rows, ax, ay] = a;
-        const s = sp(rows);
-        if (side === 'L') this._spr(s, bx + ax, shoulder + ay);
-        else this._spr(s, bx + bw - ax - s.w, shoulder + ay, true);
+        const s = sp(rows), map = ch.arms && { b: ch.arms };
+        if (side === 'L') this._spr(s, bx + ax, shoulder + ay, false, map);
+        else this._spr(s, bx + bw - ax - s.w, shoulder + ay, true, map);
       };
       drawArm(st.armL, 'L');
       drawArm(st.armR, 'R');
@@ -779,6 +871,7 @@
   }
 
   Critter.POSES = Object.keys(POSES);
+  Critter.CHARACTERS = Object.entries(CHARACTERS).map(([id, c]) => [id, c.name, !!c.movie]);
   Critter.PAL = PAL;
   Critter.SIZE = [CW, CH];
   root.Critter = Critter;

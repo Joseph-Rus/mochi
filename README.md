@@ -1,8 +1,12 @@
 # Mochi
 
-A pixel critter that lives on your Mac's screens: it wanders around, hops onto your windows, copies what you're doing, and nudges you to drink water, eat, and get up.
+A pixel critter that lives on your Mac's screens: it wanders around, hops onto your windows, copies what you're doing, and nudges you to eat and get up.
 
 ![every pose](renders/_sheet.png)
+
+It doesn't have to be Mochi: pick a kitty, a bunny, a frog, a panda, a bear, a chick or a ghost, or someone from the movies (Totoro, Stitch, a Minion, Baymax, Shrek, Olaf, a soot sprite, Yoda, Darth Vader) on the panel's **Dress up** tab. Every pose and costume works on all of them.
+
+![every character](renders/_characters.png)
 
 ## Download
 
@@ -26,11 +30,11 @@ Mochi has no Dock or menu bar icon. Right-click it for its panel; **Quit Mochi**
 | step away (45 s+) | juggles or waters its plant |
 | stay away (8 min+) | naps under a book (nightcap after 11pm) |
 | come back from a break | waves, counts it as a break |
-| have been at it 45 min without water | holds out a glass of water (turn off **drink water** in Settings) |
-| have sat 55 min | puts on sneakers and asks you to walk with it |
+| have sat 55 min | puts on sneakers and asks you to walk with it; if you say yes and stay put, it nudges you to go |
+| have sat a long time | starts to sweat |
 | have sat way too long | turns into a TV |
 | work 11:30–1:45 | puts on a chef hat: have you eaten? |
-| hit a 2–4pm slump | offers coffee, an energy drink, or a walk (water after 3pm) |
+| hit a 2–4pm slump | offers coffee, an energy drink, or a walk (just a walk after 3pm) |
 | usually get coffee around now | reminds you, based on the last week |
 | are up past 11pm | wears a nightcap and tells you to go to bed |
 
@@ -103,10 +107,10 @@ It also cheers you on every 20–35 minutes, throws confetti on each hour you've
 - **Drag** Mochi anywhere and let go (or throw it). **Click** to boop it.
 - **Right-click Mochi** for its panel: a big speech bubble over its head, while Mochi holds up a gear. Right-click again, click anywhere else or press Escape to close it. It has five tabs:
   - **Usage**: how much of your Claude plan's 5-hour and weekly limits you've used, and when each resets, and your Claude Code sessions (click one to jump to it). Connect Claude Code from here too.
-  - **Today**: time at the computer, how long you've been sitting, water, coffee, energy drinks and breaks, and buttons to log them.
+  - **Today**: time at the computer, how long you've been sitting, breaks, walks, coffee and energy drinks, and buttons to log them.
   - **Play**: cheer me on, how am I doing, play ball, water the plant, **Sit on My Window**, **Go Explore**.
-  - **Dress up**: Mochi in every costume, live; click one and Mochi wears it for a little while, click it again to take it off.
-  - **Settings** (the gear): size, roaming (off keeps it exactly where you put it, no gravity), reacting to apps and calls, emoji, open at login; a switch for each reminder (water, walks, stretches, lunch, coffee, bedtime, cheering) and the quiet hour; Claude Code, including whether the Usage tab lists your sessions.
+  - **Dress up**: who lives on your screen (Mochi, the other critters, and the movie characters; click one to switch for good), then your critter in every costume, live; click a costume and it wears it for a little while, click it again to take it off.
+  - **Settings** (the gear): size, roaming (off keeps it exactly where you put it, no gravity), reacting to apps and calls, emoji, open at login; **Stand up**, a switch for each part of it (the walk reminder, stretches and eye breaks, the nudge if you don't go, sweating, turning into a TV); a switch for each other reminder (lunch, coffee, bedtime, cheering) and the quiet hour; Claude Code, including whether the Usage tab lists your sessions.
 
 ## Building
 
@@ -116,7 +120,7 @@ It also cheers you on every 20–35 minutes, throws confetti on each hour you've
 ./build.sh release   # → build/Mochi.zip, ready to attach to a GitHub release
 ```
 
-Needs Xcode's Swift toolchain. `web/preview.html` shows every pose in a browser (they follow your cursor).
+Needs Xcode's Swift toolchain. `web/preview.html` shows every pose in a browser (they follow your cursor); add `?character=panda` (any key of `CHARACTERS` in `web/pet.js`) to see someone else.
 
 To test reminders quickly: `MOCHI_SPEED=60 ~/Applications/Mochi.app/Contents/MacOS/Mochi` makes the reminder timers 60× faster. `MOCHI_ROAM=2` makes it explore as if you'd stepped away (`1` for the occasional stroll) and logs every move to the terminal. `MOCHI_TRACE=1` logs every pose and line.
 
@@ -133,7 +137,7 @@ Re-render the PNGs in `renders/`: `Mochi.app/Contents/MacOS/Mochi --render <fold
 - `Sources/Claude.swift`: Claude Code: the local listener its hooks talk to, what each session is doing, usage limits, and connecting/disconnecting `~/.claude/settings.json`.
 - `Sources/Panel.swift`: the panel's window, which points at Mochi, and the messages to and from its page.
 - `Sources/main.swift`: the Mac app: transparent always-on-top window, how Mochi gets around (screens and window tops become ledges; walking, hopping, falling, riding), sensors (idle, sleep/wake, app in front, camera/mic, battery), the panel's actions, saving.
-- `web/pet.js`: the critter. Every pose and prop is drawn as pixel strings on a 46×34 canvas.
+- `web/pet.js`: the critter. Every pose and prop is drawn as pixel strings on a 46×34 canvas; each character recolors it and adds its own ears, tail, face and outfit bits.
 - `web/brain.js`: decides what Mochi does and says, and how much it may roam right now (it stays put while you type).
 - `web/icons.js`: pixel icons that stand in for emoji in the speech bubble.
 - `web/pet.css`: pixel speech bubble. Font: Jersey 15 (OFL, `web/fonts/OFL.txt`).
